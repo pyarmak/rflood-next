@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  rflood:
+    container_name: rflood
+    image: rfloodnext:latest
+    ports:
+      - "3000:3000"
+      - "5000:5000"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
+      - TZ=America/Winnipeg
+      - FLOOD_AUTH=false
+      - PYRO_CONF=/config/pyrosimple.toml
+      - DOWNLOAD_PATH_SSD=/ssd_cache/downloads
+      - FINAL_DEST_BASE_HDD=/media_root
+    volumes:
+      - ${DOCKER_CONFIG_PATH}/rflood:/config
+      - ${HOST_SSD_PATH}:/ssd_cache
+      - ${HOST_HDD_PATH}:/media_root

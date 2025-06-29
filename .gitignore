@@ -1,0 +1,12 @@
+
+pyrosimple-manager/.coverage
+
+pyrosimple-manager/.vscode/
+
+pyrosimple-manager/__pycache__/
+
+pyrosimple-manager/.pytest_cache/
+
+pyrosimple-manager/tests/__pycache__/
+
+testing/

@@ -1,0 +1,26 @@
+.git
+.github/
+.gitattributes
+.gitignore
+.vscode/
+.travis.yml
+.DS_Store
+*.md
+Dockerfile
+*.log
+
+# Pyrosimple-manager exclusions
+pyrosimple-manager/__pycache__/
+pyrosimple-manager/.pytest_cache/
+pyrosimple-manager/.coverage
+pyrosimple-manager/.vscode/
+pyrosimple-manager/tests/
+pyrosimple-manager/*.log
+pyrosimple-manager/config.py
+
+build.sh
+LICENSE
+README.md
+update-digests.sh
+update-versions.sh
+VERSION.json

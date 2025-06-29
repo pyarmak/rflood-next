@@ -1,0 +1,36 @@
+#!/usr/bin/with-contenv bash
+# Initialize pyrosimple-manager configuration
+
+echo "[pyrosimple-manager] Initializing configuration..."
+
+# Create config directory if it doesn't exist
+mkdir -p /config/pyrosimple-manager
+
+# Copy default config if no config exists
+if [ ! -f /config/pyrosimple-manager/config.py ]; then
+    echo "[pyrosimple-manager] No config found, copying container default..."
+    cp /app/pyrosimple-manager/config_container.py /config/pyrosimple-manager/config.py
+fi
+
+# Create symlink for the config in the app directory
+ln -sf /config/pyrosimple-manager/config.py /app/pyrosimple-manager/config.py
+
+# Ensure log directory exists
+mkdir -p /config/log
+
+# Set permissions
+chown -R abc:abc /config/pyrosimple-manager
+chmod 755 /app/pyrosimple-manager/*.py
+
+echo "[pyrosimple-manager] Configuration complete."
+
+# Display configuration warnings if any
+python3 -c "
+import sys
+sys.path.insert(0, '/app/pyrosimple-manager')
+try:
+    import config
+    print('[pyrosimple-manager] Configuration loaded successfully')
+except Exception as e:
+    print(f'[pyrosimple-manager] WARNING: Configuration error: {e}')
+" 
