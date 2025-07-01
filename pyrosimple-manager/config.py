@@ -17,7 +17,7 @@ FINAL_DEST_BASE_HDD = "/downloads/flood" # Base path on HDD for completed data (
 # Format: "http(s)://user:pass@host:port/path" or "scgi://host:port" or "/path/to/socket.scgi"
 # Example: SCGI_URL = "scgi://192.168.1.119:5000"
 # Example: SCGI_URL = "http://user:password@192.168.1.119/RPC2"
-SCGI_URL = "http://hotio:qstnbJ57HhUtxA==@192.168.1.119:5000/RPC2?rpc=json" # Replace with your actual URL
+SCGI_URL = "" # Replace with your actual URL
 
 # --- Sonarr/Radarr Configuration ---
 # Sonarr Details (if used)

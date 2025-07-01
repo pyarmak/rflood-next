@@ -22,7 +22,7 @@ RUN apk add --no-cache \
 WORKDIR /build
 
 # Download libtorrent source
-RUN curl -fsSL "https://github.com/rakshasa/libtorrent/archive/v${libtorrent_version}/libtorrent-${libtorrent_version}.tar.gz" | \
+RUN curl -fsSL "https://github.com/rakshasa/libtorrent/archive/refs/tags/v${LIBTORRENT_VERSION}.tar.gz" | \
     tar -xz --strip-components=1 -C .
 
 # Copy patches
@@ -70,7 +70,7 @@ COPY --from=libtorrent-builder /staging/usr/lib /usr/lib
 WORKDIR /build
 
 # Download rtorrent source
-RUN curl -fsSL "https://github.com/rakshasa/rtorrent/archive/v${RTORRENT_VERSION}/rtorrent-${RTORRENT_VERSION}.tar.gz" | \
+RUN curl -fsSL "https://github.com/rakshasa/rtorrent/archive/refs/tags/v${RTORRENT_VERSION}.tar.gz" | \
     tar -xz --strip-components=1 -C .
 
 # Run rtorrent prepare steps (autoreconf only, no patches)

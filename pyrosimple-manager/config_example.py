@@ -40,7 +40,7 @@ FINAL_DEST_BASE_HDD = "/downloads/flood" # Base path on HDD for completed data.
 #   SCGI_URL = "https://user:pass@rtorrent.example.com:443/RPC2?rpc=json"
 #   SCGI_URL = "/var/run/rtorrent.sock"
 #
-SCGI_URL = "http://hotio:qstnbJ57HhUtxA==@192.168.1.119:5000/RPC2?rpc=json"
+SCGI_URL = "/var/run/rtorrent.sock"
 
 # --- Sonarr Configuration ---
 # Leave these as defaults if not using Sonarr
