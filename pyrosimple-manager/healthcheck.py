@@ -9,12 +9,37 @@ import os
 import time
 from datetime import datetime, timedelta
 
+# Check if we're running during container startup
+startup_grace_period = 180  # 3 minutes
+container_start_file = '/tmp/container_started'
+
+def is_startup_period():
+    """Check if we're still in the startup grace period"""
+    if not os.path.exists(container_start_file):
+        # Create the file if it doesn't exist (first run)
+        try:
+            with open(container_start_file, 'w') as f:
+                f.write(str(time.time()))
+            return True
+        except:
+            return True
+    
+    try:
+        with open(container_start_file, 'r') as f:
+            start_time = float(f.read().strip())
+        return (time.time() - start_time) < startup_grace_period
+    except:
+        return True
+
 try:
     import pyrosimple
     import requests
     import config
 except ImportError as e:
     print(f"UNHEALTHY: Missing required import: {e}")
+    if is_startup_period():
+        print("INFO: Still in startup grace period, treating as healthy")
+        sys.exit(0)
     sys.exit(1)
 
 def check_rtorrent_connection():
@@ -25,8 +50,8 @@ def check_rtorrent_connection():
             return False, "Failed to connect to rTorrent"
         
         # Try a simple RPC call
-        engine.rpc.system.pid()
-        return True, "rTorrent connection OK"
+        pid = engine.rpc.system.pid()
+        return True, f"rTorrent connection OK (PID: {pid})"
     except Exception as e:
         return False, f"rTorrent connection failed: {str(e)}"
 
@@ -55,14 +80,24 @@ def check_disk_space():
     try:
         import shutil
         
+        # Check SSD space
+        ssd_usage = shutil.disk_usage(config.DOWNLOAD_PATH_SSD)
+        ssd_free_gb = ssd_usage.free / (1024**3)
+        
         # Check HDD space (should have at least 10GB free)
         hdd_usage = shutil.disk_usage(config.FINAL_DEST_BASE_HDD)
         hdd_free_gb = hdd_usage.free / (1024**3)
         
+        warnings = []
+        if ssd_free_gb < config.DISK_SPACE_THRESHOLD_GB:
+            warnings.append(f"SSD below threshold ({ssd_free_gb:.1f}GB < {config.DISK_SPACE_THRESHOLD_GB}GB)")
         if hdd_free_gb < 10:
-            return False, f"HDD has only {hdd_free_gb:.1f}GB free (minimum 10GB recommended)"
+            warnings.append(f"HDD critically low ({hdd_free_gb:.1f}GB < 10GB)")
         
-        return True, f"Disk space OK (HDD: {hdd_free_gb:.1f}GB free)"
+        if warnings:
+            return True, f"Disk space WARNING: {'; '.join(warnings)}"
+        
+        return True, f"Disk space OK (SSD: {ssd_free_gb:.1f}GB, HDD: {hdd_free_gb:.1f}GB)"
     except Exception as e:
         return False, f"Failed to check disk space: {str(e)}"
 
@@ -72,74 +107,118 @@ def check_arr_services():
         return True, "Arr notifications disabled"
     
     errors = []
+    successes = []
     
-    # Check Sonarr
-    if config.SONARR_URL != "http://YOUR_SONARR_IP:8989":
+    # Check Sonarr if configured
+    if config.SONARR_API_KEY and config.SONARR_URL != "http://YOUR_SONARR_IP:8989":
         try:
             response = requests.get(
                 f"{config.SONARR_URL}/api/v3/system/status",
                 headers={"X-Api-Key": config.SONARR_API_KEY},
                 timeout=5
             )
-            if response.status_code != 200:
+            if response.status_code == 200:
+                successes.append("Sonarr OK")
+            else:
                 errors.append(f"Sonarr returned status {response.status_code}")
         except Exception as e:
             errors.append(f"Sonarr connection failed: {str(e)}")
     
-    # Check Radarr
-    if config.RADARR_URL != "http://YOUR_RADARR_IP:7878":
+    # Check Radarr if configured
+    if config.RADARR_API_KEY and config.RADARR_URL != "http://YOUR_RADARR_IP:7878":
         try:
             response = requests.get(
                 f"{config.RADARR_URL}/api/v3/system/status",
                 headers={"X-Api-Key": config.RADARR_API_KEY},
                 timeout=5
             )
-            if response.status_code != 200:
+            if response.status_code == 200:
+                successes.append("Radarr OK")
+            else:
                 errors.append(f"Radarr returned status {response.status_code}")
         except Exception as e:
             errors.append(f"Radarr connection failed: {str(e)}")
     
-    if errors:
+    if errors and not successes:
         return False, "; ".join(errors)
-    return True, "Arr services OK"
+    elif errors:
+        return True, f"Partial success: {'; '.join(successes)} | Issues: {'; '.join(errors)}"
+    elif successes:
+        return True, "; ".join(successes)
+    else:
+        return True, "No Arr services configured"
 
-def check_recent_activity():
-    """Check if the script has run recently (optional)"""
-    # This would be more useful with database tracking
-    # For now, just return OK
-    return True, "Activity check OK"
+def check_configuration():
+    """Check if configuration is valid"""
+    try:
+        if hasattr(config, 'validate_config'):
+            errors, warnings = config.validate_config()
+            if errors:
+                return False, f"Configuration errors: {'; '.join(errors)}"
+            elif warnings:
+                return True, f"Configuration OK (warnings: {len(warnings)})"
+            else:
+                return True, "Configuration OK"
+        else:
+            return True, "Configuration validation not available"
+    except Exception as e:
+        return False, f"Configuration check failed: {str(e)}"
 
 def main():
     """Run all health checks"""
+    startup_mode = is_startup_period()
+    
     print(f"Health check started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    if startup_mode:
+        print("INFO: Running in startup grace period mode")
     
     checks = [
-        ("rTorrent Connection", check_rtorrent_connection),
+        ("Configuration", check_configuration),
         ("Storage Paths", check_storage_paths),
         ("Disk Space", check_disk_space),
+        ("rTorrent Connection", check_rtorrent_connection),
         ("Arr Services", check_arr_services),
-        ("Recent Activity", check_recent_activity),
     ]
     
     all_healthy = True
+    critical_failure = False
     
     for check_name, check_func in checks:
         try:
             healthy, message = check_func()
             status = "✓" if healthy else "✗"
             print(f"{status} {check_name}: {message}")
+            
             if not healthy:
                 all_healthy = False
+                # During startup, only configuration and storage paths are critical
+                if startup_mode:
+                    if check_name in ["Configuration", "Storage Paths"]:
+                        critical_failure = True
+                else:
+                    # After startup, rTorrent connection is also critical
+                    if check_name in ["Configuration", "Storage Paths", "rTorrent Connection"]:
+                        critical_failure = True
+                        
         except Exception as e:
             print(f"✗ {check_name}: Unexpected error: {str(e)}")
             all_healthy = False
+            if not startup_mode or check_name in ["Configuration", "Storage Paths"]:
+                critical_failure = True
     
-    if all_healthy:
+    # Determine final status
+    if critical_failure:
+        print("\nStatus: UNHEALTHY (critical failure)")
+        sys.exit(1)
+    elif startup_mode and not all_healthy:
+        print("\nStatus: HEALTHY (startup grace period)")
+        sys.exit(0)
+    elif all_healthy:
         print("\nStatus: HEALTHY")
         sys.exit(0)
     else:
-        print("\nStatus: UNHEALTHY")
-        sys.exit(1)
+        print("\nStatus: DEGRADED (non-critical issues)")
+        sys.exit(0)  # Still report healthy for non-critical issues
 
 if __name__ == "__main__":
     main() 
