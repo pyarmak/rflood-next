@@ -145,8 +145,12 @@ RUN mkdir -p ${APP_DIR} ${CONFIG_DIR}
 COPY --from=libtorrent-builder /staging/usr/lib/libtorrent.so.* /usr/lib/
 
 # Ensure copied libraries have proper permissions for all users
-RUN chmod 644 /usr/lib/libtorrent.so.* && \
-    ldconfig
+RUN ls -la /usr/lib/libtorrent.so* && \
+    find /usr/lib -name "libtorrent.so*" -exec chmod 644 {} + && \
+    echo "Libraries permissions set successfully"
+
+# Update library cache if ldconfig is available
+RUN ldconfig 2>/dev/null || echo "ldconfig not available or failed, continuing..."
 
 # Copy the compiled rtorrent binary from the rtorrent-builder stage
 COPY --from=rtorrent-builder /staging/usr/bin/rtorrent "${APP_DIR}/rtorrent"
