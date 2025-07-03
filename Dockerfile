@@ -147,20 +147,19 @@ COPY --from=libtorrent-builder /staging/usr/lib/libtorrent.so.* /usr/lib/
 # Copy the compiled rtorrent binary from the rtorrent-builder stage
 COPY --from=rtorrent-builder /staging/usr/bin/rtorrent "${APP_DIR}/rtorrent"
 
-RUN chmod 755 "${APP_DIR}/rtorrent"
-
 # Copy the example rtorrent.rc config file from the rtorrent-builder stage
 COPY --from=rtorrent-builder /staging/usr/share/doc/rtorrent/rtorrent.rc /usr/share/doc/rtorrent/rtorrent.rc.example
 
 # Download Flood
-RUN curl -fsSL "https://github.com/jesec/flood/releases/download/v${FLOOD_VERSION}/flood-linux-x64" > "${APP_DIR}/flood" && \
-    chmod 755 "${APP_DIR}/flood"
+RUN curl -fsSL "https://github.com/jesec/flood/releases/download/v${FLOOD_VERSION}/flood-linux-x64" > "${APP_DIR}/flood"
 
 # Copy application configuration/scripts
 COPY root/ /
 
-# Ensure init scripts have execute permissions
-RUN chmod +x /etc/cont-init.d/* 2>/dev/null || true && \
+# Set all permissions after copying files to ensure they are not overridden
+RUN chmod 755 "${APP_DIR}/rtorrent" && \
+    chmod 755 "${APP_DIR}/flood" && \
+    chmod +x /etc/cont-init.d/* 2>/dev/null || true && \
     chmod +x /etc/s6-overlay/s6-rc.d/*/run 2>/dev/null || true
 
 # Copy pyrosimple-manager scripts into the container
