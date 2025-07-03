@@ -72,7 +72,7 @@ def relocate_and_delete_ssd(engine: 'RtorrentEngine', torrent_info: 'TorrentInfo
 
     try:
         # Get item, prefetch needed state info
-        item: 'RtorrentItem' = engine.item(torrent_info.hash, prefetch=['is_active'], check=False)
+        item: 'RtorrentItem' = engine.item(torrent_info.hash, prefetch=['is_active'])
         if item is None: print(f"  ERROR: Torrent {torrent_info.hash} not found for relocation."); return False
 
         print("  Checking torrent state via pyrosimple...")
