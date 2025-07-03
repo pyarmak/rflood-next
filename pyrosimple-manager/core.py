@@ -244,26 +244,25 @@ def manage_ssd_space(engine: 'RtorrentEngine'):
 
     sorted_torrents_on_ssd = [] # List to hold info
     try:
-        # Define fields needed (same as before)
-        prefetch_fields = ['hash', 'name', 'path', 'directory', 'size_bytes',
-                           'complete', 'custom1', 'custom=tm_completed']
-        valid_prefetch = [f for f in prefetch_fields if f in rtorrent_engine.FIELD_REGISTRY or f.startswith("custom=")]
+        prefetch_fields = ['hash', 'name', 'path', 'directory', 'size',
+                            'is_complete', 'label', 'completed', 'is_multi_file']
+        prefetch = [item for f in prefetch_fields for item in rtorrent_engine.FIELD_REGISTRY[f].requires]
 
         items_on_ssd_candidates = []
-        print(f"  Prefetching fields: {valid_prefetch}")
-        all_items = engine.items(prefetch=valid_prefetch) # Use engine from util
+        print(f"  Prefetching fields: {prefetch_fields}")
+        all_items = engine.items(prefetch=prefetch) # Use engine from util
         print(f"  Filtering torrents for SSD candidates...")
 
         for item in all_items: # Filter items in Python
             try:
-                is_complete = getattr(item, 'complete', False)
+                is_complete = getattr(item, 'is_complete', False)
                 # Use directory path from config
                 item_dir = getattr(item, 'directory', None)
 
                 if is_complete and item_dir and item_dir.startswith(config.DOWNLOAD_PATH_SSD):
-                    tm_completed = getattr(item, 'tm_completed', 0)
-                    if not isinstance(tm_completed, int) or tm_completed <= 0:
-                         print(f"  Warning: Skipping item {item.hash} due to missing or invalid tm_completed value: {tm_completed}")
+                    completed = getattr(item, 'completed', 0)
+                    if not isinstance(completed, int) or completed <= 0:
+                         print(f"  Warning: Skipping item {item.hash} due to missing or invalid completed value: {completed}")
                          continue
                     # Create TorrentInfo object for relocation function
                     from util import TorrentInfo, BTIH
@@ -274,12 +273,12 @@ def manage_ssd_space(engine: 'RtorrentEngine'):
                         directory=item.directory,
                         size=item.size,
                         is_multi_file=getattr(item, 'is_multi_file', False),
-                        label=getattr(item, 'custom1', '')
+                        label=getattr(item, 'label', '')
                     )
                     info = {
                         "torrent_info": torrent_info,
                         "size": item.size/(1024**3),
-                        "timestamp": tm_completed
+                        "timestamp": completed
                     }
                     items_on_ssd_candidates.append(info)
             except AttributeError as e: print(f"  Warning: Attribute error processing item {getattr(item, 'hash', 'UNKNOWN')}: {e}")
