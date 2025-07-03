@@ -26,7 +26,7 @@ FINAL_DEST_BASE_HDD = os.getenv('FINAL_DEST_BASE_HDD', '/downloads/hdd')
 # Since we're in the same container, use local SCGI socket or localhost
 # Allow override for different container networking setups
 # SCGI_URL = os.getenv('SCGI_URL', 'scgi://127.0.0.1:5000')
-SCGI_URL = os.getenv('SCGI_URL', '/var/run/rtorrent.sock')
+SCGI_URL = os.getenv('SCGI_URL', '/dev/shm/rtorrent.sock')
 
 # --- Sonarr Configuration ---
 SONARR_URL = os.getenv('SONARR_URL', 'http://sonarr:8989')

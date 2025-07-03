@@ -96,7 +96,7 @@ RUN install -Dm644 doc/rtorrent.rc "/staging/usr/share/doc/rtorrent/rtorrent.rc"
 # ============================
 FROM ghcr.io/hotio/base:alpinevpn
 
-EXPOSE 3000 5000
+EXPOSE 3000
 
 ARG FLOOD_VERSION=4.9.3
 ARG RTORRENT_VERSION=0.15.5
@@ -105,7 +105,7 @@ ENV PYTHONUNBUFFERED=1
 ENV APP_DIR=/app \
     CONFIG_DIR=/config
 ENV FLOOD_AUTH="false" \
-    WEBUI_PORTS="3000/tcp,3000/udp,5000/tcp,5000/udp"
+    WEBUI_PORTS="3000/tcp,3000/udp"
 
 # Install Python 3 and pip
 RUN echo "**** install Python ****" && \
@@ -122,7 +122,6 @@ RUN echo "**** install Python ****" && \
 # Install RUNTIME dependencies for custom libtorrent and rtorrent, plus other tools
 RUN apk add --no-cache \
     curl \
-    nginx \
     openssl \
     zlib \
     libsigc++ \
@@ -130,7 +129,6 @@ RUN apk add --no-cache \
     tinyxml2 \
     libcurl \
     xmlrpc-c \
-    xmlrpc-c-tools \
     mediainfo \
     libstdc++
 
@@ -141,7 +139,7 @@ RUN pip install --no-cache-dir 'pyrosimple[torque]'
 RUN pip install --no-cache-dir requests
 
 # Create APP_DIR and CONFIG_DIR if they might not exist
-RUN mkdir -p ${APP_DIR} ${CONFIG_DIR}/rpc2
+RUN mkdir -p ${APP_DIR} ${CONFIG_DIR}
 
 # Copy the compiled libtorrent shared libraries from the libtorrent-builder stage
 COPY --from=libtorrent-builder /staging/usr/lib/libtorrent.so.* /usr/lib/
@@ -153,9 +151,6 @@ RUN chmod 755 "${APP_DIR}/rtorrent"
 
 # Copy the example rtorrent.rc config file from the rtorrent-builder stage
 COPY --from=rtorrent-builder /staging/usr/share/doc/rtorrent/rtorrent.rc /usr/share/doc/rtorrent/rtorrent.rc.example
-
-# Create the symbolic link
-RUN ln -s "${CONFIG_DIR}/rpc2/basic_auth_credentials" "${APP_DIR}/basic_auth_credentials"
 
 # Download Flood
 RUN curl -fsSL "https://github.com/jesec/flood/releases/download/v${FLOOD_VERSION}/flood-linux-x64" > "${APP_DIR}/flood" && \

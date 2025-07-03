@@ -56,8 +56,7 @@ docker exec rflood python /app/pyrosimple-manager/healthcheck.py
 ```
 
 ### 3. Access Services
-- **Flood UI**: `http://your-host:3000`
-- **rTorrent RPC**: `http://your-host:5000` 
+- **Flood UI**: `http://your-host:3000` 
 
 ## Architecture
 
