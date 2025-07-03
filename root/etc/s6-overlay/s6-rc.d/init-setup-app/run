@@ -12,21 +12,7 @@ FLOOD_AUTH=${FLOOD_AUTH}
 ----------------------------------------------------------------------
 "
 
-# Ensure system libraries are accessible (should be world-readable)
-echo "Ensuring system library accessibility..."
-chmod -R a+r /usr/lib/ 2>/dev/null || true
-chmod a+x /usr/lib/ 2>/dev/null || true
-
-# Ensure our custom libtorrent libraries are accessible
-find /usr/lib/ -name "libtorrent.so*" -exec chmod 644 {} + 2>/dev/null || true
-
-# Ensure proper ownership of application and config directories
-echo "Setting ownership for application and config directories..."
-find "${APP_DIR}" \( ! -user hotio -or ! -group hotio \) -exec chown hotio:hotio {} +
-find "${CONFIG_DIR}" \( ! -user hotio -or ! -group hotio \) -exec chown hotio:hotio {} +
-
 if [[ ! -f "${CONFIG_DIR}/rtorrent.rc" ]]; then
     echo "Installing default \"rtorrent.rc\"..."
     cp "${APP_DIR}/rtorrent.rc" "${CONFIG_DIR}/rtorrent.rc"
-    find "${CONFIG_DIR}/rtorrent.rc" -maxdepth 0 \( ! -user hotio -or ! -group hotio \) -exec chown hotio:hotio {} +
 fi
