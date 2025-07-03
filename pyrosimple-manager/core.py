@@ -75,41 +75,108 @@ def relocate_and_delete_ssd(engine: 'RtorrentEngine', torrent_info: 'TorrentInfo
         prefetch_fields = ['is_active']
         prefetch = [item for f in prefetch_fields for item in rtorrent_engine.FIELD_REGISTRY[f].requires]
         item: 'RtorrentItem' = engine.item(torrent_info.hash, prefetch=prefetch)
-        if item is None: print(f"  ERROR: Torrent {torrent_info.hash} not found for relocation."); return False
+        if item is None: 
+            print(f"  ERROR: Torrent {torrent_info.hash} not found for relocation.")
+            return False
 
         print("  Checking torrent state via pyrosimple...")
         if item.is_active:
-            print("  Torrent is active. Stopping via pyrosimple..."); was_started = True
-            item.stop(); print("  Stop command sent."); time.sleep(1)
-        else: print("  Torrent is already stopped.")
+            print("  Torrent is active. Stopping via pyrosimple...")
+            was_started = True
+            item.stop()
+            print("  Stop command sent.")
+            time.sleep(1)
+        else: 
+            print("  Torrent is already stopped.")
 
         print("  Updating rTorrent directory via pyrosimple RPC call...")
         item.rpc_call("d.directory.set", [hdd_base_dir])
-        print("  Successfully executed d.directory.set via RPC."); time.sleep(0.5)
+        print("  Successfully executed d.directory.set via RPC.")
+        time.sleep(0.5)
 
-        print(f"  Deleting SSD data at: {torrent_info.path}")
-        try: # Safety check first
+        # CRITICAL: Verify destination exists before deleting source
+        expected_hdd_path = os.path.join(hdd_base_dir, torrent_info.name.strip())
+        print(f"  Verifying destination exists at: {expected_hdd_path}")
+        
+        if not os.path.exists(expected_hdd_path):
+            print(f"  Destination path '{expected_hdd_path}' does not exist!")
+            print(f"  Need to copy data from SSD to HDD first...")
+            
+            if config.DRY_RUN:
+                print(f"  [DRY RUN] Would copy {'directory' if torrent_info.is_multi_file else 'file'} from {torrent_info.path} to {expected_hdd_path}")
+            else:
+                try:
+                    # Ensure base directory exists
+                    os.makedirs(hdd_base_dir, exist_ok=True)
+                    
+                    copy_start_time = time.time()
+                    if torrent_info.is_multi_file:
+                        shutil.copytree(torrent_info.path, expected_hdd_path, copy_function=shutil.copy2, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(torrent_info.path, expected_hdd_path)
+                    print(f"  Copy completed in {time.time() - copy_start_time:.2f} seconds.")
+                    
+                    # Verify the copy was successful
+                    from util import verify_copy
+                    if not verify_copy(torrent_info.path, expected_hdd_path, torrent_info.is_multi_file):
+                        print(f"  ERROR: Copy verification failed!")
+                        if was_started: 
+                            print("  Attempting to restart torrent after copy failure...")
+                            item.start()
+                        return False
+                    print(f"  Copy verification successful.")
+                    
+                except (shutil.Error, OSError) as e:
+                    print(f"  ERROR: Failed to copy data to HDD: {e}")
+                    if was_started: 
+                        print("  Attempting to restart torrent after copy failure...")
+                        item.start()
+                    return False
+        else:
+            print(f"  Destination already exists on HDD.")
+
+        print(f"  Destination verified. Proceeding to delete SSD data at: {torrent_info.path}")
+        
+        # Safety check before deletion
+        try:
             norm_ssd_dl_path = os.path.normpath(os.path.realpath(download_path_ssd))
             norm_ssd_data_path = os.path.normpath(os.path.realpath(torrent_info.path))
             if os.path.commonpath([norm_ssd_data_path, norm_ssd_dl_path]) != norm_ssd_dl_path:
                 print(f"  SAFETY ERROR: Path '{norm_ssd_data_path}' not within '{norm_ssd_dl_path}'. Aborting delete.")
-                if was_started: print("  Attempting to restart torrent after safety check failure..."); item.start()
+                if was_started: 
+                    print("  Attempting to restart torrent after safety check failure...")
+                    item.start()
                 return False
-        except FileNotFoundError: print(f"  Warning: SSD path '{torrent_info.path}' not found for safety check."); delete_successful = True
-        except Exception as e: print(f"  ERROR during safety check: {e}"); return False
+        except FileNotFoundError: 
+            print(f"  Warning: SSD path '{torrent_info.path}' not found for safety check.")
+            delete_successful = True
+        except Exception as e: 
+            print(f"  ERROR during safety check: {e}")
+            return False
 
-        if not delete_successful: # Delete only if safety check passed/path already gone
+        # Delete SSD data only if safety check passed/path already gone
+        if not delete_successful:
             try:
                 if os.path.exists(torrent_info.path):
-                    if os.path.isdir(torrent_info.path): shutil.rmtree(torrent_info.path); print(f"  Successfully deleted SSD directory.")
-                    elif os.path.isfile(torrent_info.path): os.remove(torrent_info.path); print(f"  Successfully deleted SSD file.")
+                    if os.path.isdir(torrent_info.path): 
+                        shutil.rmtree(torrent_info.path)
+                        print(f"  Successfully deleted SSD directory.")
+                    elif os.path.isfile(torrent_info.path): 
+                        os.remove(torrent_info.path)
+                        print(f"  Successfully deleted SSD file.")
                     delete_successful = True
-                else: print(f"  Warning: SSD path not found for deletion (already gone)."); delete_successful = True
-            except OSError as e: print(f"  ERROR deleting SSD data: {e}"); delete_successful = False
+                else: 
+                    print(f"  Warning: SSD path not found for deletion (already gone).")
+                    delete_successful = True
+            except OSError as e: 
+                print(f"  ERROR deleting SSD data: {e}")
+                delete_successful = False
 
-        if was_started: # Restart if needed
+        # Restart torrent if it was originally running
+        if was_started:
             print("  Restarting torrent via pyrosimple...")
-            item.start(); print("  Start command sent.")
+            item.start()
+            print("  Start command sent.")
             start_successful = True # Assume success if no exception
 
         return delete_successful and start_successful
@@ -117,8 +184,11 @@ def relocate_and_delete_ssd(engine: 'RtorrentEngine', torrent_info: 'TorrentInfo
     except Exception as e:
         print(f"  ERROR: pyrosimple request error during relocation of {torrent_info.hash}: {e}")
         if was_started and "start" not in str(e).lower():
-             try: print("  Attempting to restart torrent after pyrosimple error..."); engine.item(torrent_info.hash).start()
-             except Exception as restart_e: print(f"  Failed to send restart command after error: {restart_e}")
+            try: 
+                print("  Attempting to restart torrent after pyrosimple error...")
+                engine.item(torrent_info.hash).start()
+            except Exception as restart_e: 
+                print(f"  Failed to send restart command after error: {restart_e}")
         return False
 # ===================================================================
 
