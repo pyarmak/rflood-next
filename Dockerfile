@@ -159,10 +159,6 @@ COPY root/ /
 # Set all permissions after copying files to ensure they are not overridden
 RUN chmod 755 "${APP_DIR}/rtorrent" && \
     chmod 755 "${APP_DIR}/flood" && \
-    chown hotio:hotio "${APP_DIR}/rtorrent" && \
-    chown hotio:hotio "${APP_DIR}/flood" && \
-    chown -R hotio:hotio "${APP_DIR}" && \
-    chown -R hotio:hotio "${CONFIG_DIR}" && \
     chmod +x /etc/cont-init.d/* 2>/dev/null || true && \
     chmod +x /etc/s6-overlay/s6-rc.d/*/run 2>/dev/null || true
 
@@ -173,10 +169,7 @@ RUN chmod +x ${APP_DIR}/pyrosimple-manager/main.py && \
     # Create directory for pyrosimple-manager config \
     mkdir -p ${CONFIG_DIR}/pyrosimple-manager && \
     # Create symlink for easier access from rtorrent \
-    ln -s ${APP_DIR}/pyrosimple-manager /scripts && \
-    # Final ownership fix to ensure all files are owned by hotio \
-    chown -R hotio:hotio "${APP_DIR}" && \
-    chown -R hotio:hotio "${CONFIG_DIR}"
+    ln -s ${APP_DIR}/pyrosimple-manager /scripts
 
 # Add healthcheck that includes pyrosimple-manager checks
 HEALTHCHECK --interval=60s --timeout=20s --start-period=180s --retries=3 \
