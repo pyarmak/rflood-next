@@ -252,7 +252,7 @@ def manage_ssd_space(engine: 'RtorrentEngine'):
         items_on_ssd_candidates = []
         print(f"  Prefetching fields: {valid_prefetch}")
         all_items = engine.items(prefetch=valid_prefetch) # Use engine from util
-        print(f"  Found {len(all_items)} total torrents. Filtering...")
+        print(f"  Filtering torrents for SSD candidates...")
 
         for item in all_items: # Filter items in Python
             try:

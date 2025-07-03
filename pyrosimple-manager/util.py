@@ -120,16 +120,23 @@ def get_torrent_info(engine: 'RtorrentEngine', hash_val: BTIH) -> TorrentInfo:
     example: TorrentInfo(hash=BTIH('02E5A8D9F7800A063237F0D37467144360D4B70A'), name='daredevil.born.again.s01e08.hdr.2160p.web.h265-successfulcrab.mkv', path='\\downloading\\sonarr\\daredevil.born.again.s01e08.hdr.2160p.web.h265-successfulcrab.mkv', directory='/downloading/sonarr', size=5408683456, is_multi_file=False, label='sonarr')
     """
     print("  Getting torrent info...")
-    info_keys = ["name", "path", "directory", "size", "is_multi_file", "label"]
-    sanitized_info_keys = [key for key in info_keys if key in FIELD_REGISTRY]
-    prefetch = [
-        FIELD_REGISTRY[f].requires
-        for f in sanitized_info_keys
-    ]
-    prefetch = [item for sublist in prefetch for item in sublist]
-    item: RtorrentItem = engine.item(hash_val, prefetch)
-    torrent_info = TorrentInfo(hash_val, *[getattr(item, key, None) for key in info_keys])
-    return torrent_info
+    try:
+        info_keys = ["name", "path", "directory", "size", "is_multi_file", "label"]
+        sanitized_info_keys = [key for key in info_keys if key in FIELD_REGISTRY]
+        prefetch = [
+            FIELD_REGISTRY[f].requires
+            for f in sanitized_info_keys
+        ]
+        prefetch = [item for sublist in prefetch for item in sublist]
+        item: RtorrentItem = engine.item(hash_val, prefetch)
+        if item is None:
+            print(f"  ERROR: Torrent {hash_val} not found.")
+            return None
+        torrent_info = TorrentInfo(hash_val, *[getattr(item, key, None) for key in info_keys])
+        return torrent_info
+    except Exception as e:
+        print(f"  ERROR: Failed to get torrent info for {hash_val}: {e}")
+        return None
 
 def get_torrents_by_path(engine: 'RtorrentEngine', path: str, complete=True) -> typing.List['RtorrentItem']:
     """
@@ -166,6 +173,9 @@ def get_torrents_by_path(engine: 'RtorrentEngine', path: str, complete=True) -> 
 def verify_copy(src_path, dst_path, is_multi):
     """Verifies copy using size (single file) or size+count (multi-file)."""
     print("  Verifying copy...")
+    if not src_path or not dst_path:
+        print(f"  Verification ERROR: Invalid paths provided - src: '{src_path}', dst: '{dst_path}'")
+        return False
     if not os.path.exists(src_path): print(f"  Verification ERROR: Source path '{src_path}' disappeared!"); return False
     if not os.path.exists(dst_path): print(f"  Verification ERROR: Destination path '{dst_path}' does not exist!"); return False
     try:
