@@ -1,14 +1,17 @@
 # ============================
-# Stage 1: Build libtorrent
+# Stage 1: Build libtorrent and rtorrent
 # ============================
-FROM alpine AS libtorrent-builder
+FROM alpine AS builder
 
 ARG LIBTORRENT_VERSION=0.15.5
+ARG RTORRENT_VERSION=0.15.5
 ENV LIBTORRENT_VERSION=${LIBTORRENT_VERSION}
+ENV RTORRENT_VERSION=${RTORRENT_VERSION}
 
 # Install build tools and libtorrent's makedepends
 RUN apk add --no-cache \
     curl \
+    curl-dev \
     libcurl \
     alpine-sdk \
     autoconf \
@@ -17,82 +20,34 @@ RUN apk add --no-cache \
     libtool \
     linux-headers \
     openssl-dev \
-    zlib-dev
+    zlib-dev \
+    ncurses-dev \
+    tinyxml2-dev
 
 WORKDIR /build
 
 # Download libtorrent source
-RUN curl -fsSL "https://github.com/rakshasa/libtorrent/archive/refs/tags/v${LIBTORRENT_VERSION}.tar.gz" | \
-    tar -xz --strip-components=1 -C .
+RUN mkdir "/tmp/libtorrent" && \
+    curl -fsSL "https://github.com/rakshasa/libtorrent/archive/refs/tags/v${LIBTORRENT_VERSION}.tar.gz" | \
+    tar -xzf - -C "/tmp/libtorrent" --strip-components=1 && \
+    cd "/tmp/libtorrent" && \
+    autoreconf -ivf && \
+    ./configure --disable-debug --disable-shared --enable-static --enable-aligned && \
+    make -j$(nproc) CXXFLAGS="-w -O3 -flto -Werror=odr -Werror=lto-type-mismatch -Werror=strict-aliasing" && \
+    make install
 
-# Copy patches
-# COPY patches/0001-missing-header-algorithm.patch .
+RUN mkdir "/tmp/rtorrent" && \
+    curl -fsSL "https://github.com/rakshasa/rtorrent/archive/refs/tags/v${RTORRENT_VERSION}.tar.gz" | \
+    tar -xzf - -C "/tmp/rtorrent" --strip-components=1 && \
+    cd "/tmp/rtorrent" && \
+    autoreconf -ivf && \
+    ./configure --disable-debug --disable-shared --enable-static --enable-aligned --with-xmlrpc-tinyxml2 && \
+    make -j$(nproc) CXXFLAGS="-w -O3 -flto -Werror=odr -Werror=lto-type-mismatch -Werror=strict-aliasing" && \
+    make install
 
-# Apply libtorrent patches
-# RUN patch -p1 < 0001-missing-header-algorithm.patch
-
-# Run prepare steps
-RUN autoreconf -ivf
-
-# Run build steps
-RUN ./configure \
-        --prefix=/usr \
-        --disable-debug
-RUN make
-
-# Run package step into a staging directory
-RUN make DESTDIR=/staging install
 
 # ============================
-# Stage 2: Build rtorrent
-# ============================
-FROM alpine AS rtorrent-builder
-
-ARG RTORRENT_VERSION=0.15.5
-ENV RTORRENT_VERSION=${RTORRENT_VERSION}
-
-# Install build tools and rtorrent's makedepends
-RUN apk add --no-cache \
-    curl \
-    alpine-sdk \
-    autoconf \
-    automake \
-    curl-dev \
-    libsigc++-dev \
-    libtool \
-    ncurses-dev \
-    tinyxml2-dev
-
-# Copy compiled libtorrent (headers and libs) from the previous stage
-COPY --from=libtorrent-builder /staging/usr/include /usr/include
-COPY --from=libtorrent-builder /staging/usr/lib /usr/lib
-
-WORKDIR /build
-
-# Download rtorrent source
-RUN curl -fsSL "https://github.com/rakshasa/rtorrent/archive/refs/tags/v${RTORRENT_VERSION}.tar.gz" | \
-    tar -xz --strip-components=1 -C .
-
-# Run rtorrent prepare steps (autoreconf only, no patches)
-RUN autoreconf -ivf
-
-# Run rtorrent build steps (should link against the copied libtorrent)
-RUN ./configure \
-        --prefix=/usr \
-        --sysconfdir=/etc \
-        --mandir=/usr/share/man \
-        --localstatedir=/var \
-        --enable-ipv6 \
-        --disable-debug \
-        --with-xmlrpc-tinyxml2
-RUN make
-
-# Run package step into a staging directory
-RUN make DESTDIR=/staging install
-RUN install -Dm644 doc/rtorrent.rc "/staging/usr/share/doc/rtorrent/rtorrent.rc"
-
-# ============================
-# Stage 3: Final Image
+# Stage 2: Final Image
 # ============================
 FROM ghcr.io/hotio/base:alpinevpn
 
@@ -121,16 +76,8 @@ RUN echo "**** install Python ****" && \
 
 # Install RUNTIME dependencies for custom libtorrent and rtorrent, plus other tools
 RUN apk add --no-cache \
-    curl \
     openssl \
-    zlib \
-    libsigc++ \
-    ncurses-libs \
-    tinyxml2 \
-    libcurl \
-    xmlrpc-c \
-    mediainfo \
-    libstdc++
+    mediainfo 
 
 # Install pyrosimple
 RUN pip install --no-cache-dir 'pyrosimple[torque]'
@@ -141,39 +88,28 @@ RUN pip install --no-cache-dir requests
 # Create APP_DIR and CONFIG_DIR if they might not exist
 RUN mkdir -p ${APP_DIR} ${CONFIG_DIR}
 
-# Copy the compiled libtorrent shared libraries from the libtorrent-builder stage
-COPY --from=libtorrent-builder /staging/usr/lib/libtorrent.so.* /usr/lib/
-
-# Copy the compiled rtorrent binary from the rtorrent-builder stage
-COPY --from=rtorrent-builder /staging/usr/bin/rtorrent "${APP_DIR}/rtorrent"
-
-# Copy the example rtorrent.rc config file from the rtorrent-builder stage
-COPY --from=rtorrent-builder /staging/usr/share/doc/rtorrent/rtorrent.rc /usr/share/doc/rtorrent/rtorrent.rc.example
+COPY --from=builder /usr/local/bin/rtorrent "${APP_DIR}/rtorrent"
 
 # Download Flood
-RUN curl -fsSL "https://github.com/jesec/flood/releases/download/v${FLOOD_VERSION}/flood-linux-x64" > "${APP_DIR}/flood"
-
-# Copy application configuration/scripts
-COPY root/ /
-
-# Set all permissions after copying files to ensure they are not overridden
-RUN chmod 755 "${APP_DIR}/rtorrent" && \
-    chmod 755 "${APP_DIR}/flood" && \
-    chmod +x /etc/cont-init.d/* 2>/dev/null || true && \
-    chmod +x /etc/s6-overlay/s6-rc.d/*/run 2>/dev/null || true
+RUN curl -fsSL "https://github.com/jesec/flood/releases/download/v${FLOOD_VERSION}/flood-linux-x64" > "${APP_DIR}/flood" && \
+    chmod 755 "${APP_DIR}/flood"
 
 # Copy pyrosimple-manager scripts into the container
 RUN mkdir -p ${APP_DIR}/pyrosimple-manager
 COPY pyrosimple-manager/*.py ${APP_DIR}/pyrosimple-manager/
-RUN chmod +x ${APP_DIR}/pyrosimple-manager/main.py && \
+RUN chmod 755 ${APP_DIR}/pyrosimple-manager/main.py && \
     # Create directory for pyrosimple-manager config \
     mkdir -p ${CONFIG_DIR}/pyrosimple-manager && \
+    chmod 755 ${CONFIG_DIR}/pyrosimple-manager && \
     # Create symlink for easier access from rtorrent \
     ln -s ${APP_DIR}/pyrosimple-manager /scripts
+
+# Clean up apk cache
+RUN rm -rf /var/cache/apk/*
+
+# Copy application configuration/scripts
+COPY root/ /
 
 # Add healthcheck that includes pyrosimple-manager checks
 HEALTHCHECK --interval=60s --timeout=20s --start-period=180s --retries=3 \
     CMD python ${APP_DIR}/pyrosimple-manager/healthcheck.py || exit 1
-
-# Clean up apk cache
-RUN rm -rf /var/cache/apk/*
