@@ -19,7 +19,8 @@ ln -sf /config/pyrosimple-manager/config.py /app/pyrosimple-manager/config.py
 mkdir -p /config/log
 
 # Set permissions
-chown -R abc:abc /config/pyrosimple-manager
+chown -R hotio:hotio /config/pyrosimple-manager
+chown -R hotio:hotio /config/log
 chmod 755 /app/pyrosimple-manager/*.py
 
 echo "[pyrosimple-manager] Configuration complete."

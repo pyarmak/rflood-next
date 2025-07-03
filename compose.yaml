@@ -2,7 +2,8 @@ version: '3.8'
 services:
   rflood:
     container_name: rflood
-    image: rfloodnext:latest
+    image: rflood-next:latest
+    pull_policy: never
     ports:
       - "3000:3000"
       - "5000:5000"
@@ -12,10 +13,9 @@ services:
       - UMASK=002
       - TZ=America/Winnipeg
       - FLOOD_AUTH=false
-      - PYRO_CONF=/config/pyrosimple.toml
-      - DOWNLOAD_PATH_SSD=/ssd_cache/downloads
-      - FINAL_DEST_BASE_HDD=/media_root
+      - DOWNLOAD_PATH_SSD=/downloading
+      - FINAL_DEST_BASE_HDD=/downloads
     volumes:
-      - ${DOCKER_CONFIG_PATH}/rflood:/config
-      - ${HOST_SSD_PATH}:/ssd_cache
-      - ${HOST_HDD_PATH}:/media_root
+      - ./testing/config:/config
+      - ./testing/downloads:/downloads
+      - ./testing/downloading:/downloading

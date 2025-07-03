@@ -1,7 +1,7 @@
 # ============================
 # Stage 1: Build libtorrent
 # ============================
-FROM alpine AS libtorrent-builder
+FROM alpine:3.21 AS libtorrent-builder
 
 ARG LIBTORRENT_VERSION=0.15.5
 ENV LIBTORRENT_VERSION=${LIBTORRENT_VERSION}
@@ -46,7 +46,7 @@ RUN make DESTDIR=/staging install
 # ============================
 # Stage 2: Build rtorrent
 # ============================
-FROM alpine AS rtorrent-builder
+FROM alpine:3.21 AS rtorrent-builder
 
 ARG RTORRENT_VERSION=0.15.5
 ENV RTORRENT_VERSION=${RTORRENT_VERSION}
@@ -163,6 +163,10 @@ RUN curl -fsSL "https://github.com/jesec/flood/releases/download/v${FLOOD_VERSIO
 
 # Copy application configuration/scripts
 COPY root/ /
+
+# Ensure init scripts have execute permissions
+RUN chmod +x /etc/cont-init.d/* 2>/dev/null || true && \
+    chmod +x /etc/s6-overlay/s6-rc.d/*/run 2>/dev/null || true
 
 # Copy pyrosimple-manager scripts into the container
 RUN mkdir -p ${APP_DIR}/pyrosimple-manager
