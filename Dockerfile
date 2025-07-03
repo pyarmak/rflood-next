@@ -134,6 +134,12 @@ RUN apk add --no-cache \
     mediainfo \
     libstdc++
 
+# Fix permissions on shared libraries for non-root user access
+RUN chmod -R a+rX /usr/lib /usr/lib64 2>/dev/null || true && \
+    chmod -R a+rX /lib /lib64 2>/dev/null || true && \
+    # Ensure nginx binary has correct permissions
+    chmod 755 /usr/sbin/nginx
+
 # Install pyrosimple
 RUN pip install --no-cache-dir 'pyrosimple[torque]'
 
@@ -145,6 +151,9 @@ RUN mkdir -p ${APP_DIR} ${CONFIG_DIR}/rpc2
 
 # Copy the compiled libtorrent shared libraries from the libtorrent-builder stage
 COPY --from=libtorrent-builder /staging/usr/lib/libtorrent.so.* /usr/lib/
+
+# Fix permissions on copied libtorrent libraries
+RUN chmod 644 /usr/lib/libtorrent.so.*
 
 # Copy the compiled rtorrent binary from the rtorrent-builder stage
 COPY --from=rtorrent-builder /staging/usr/bin/rtorrent "${APP_DIR}/rtorrent"
