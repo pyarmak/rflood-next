@@ -16,7 +16,6 @@ pyrosimple-manager/.coverage
 pyrosimple-manager/.vscode/
 pyrosimple-manager/tests/
 pyrosimple-manager/*.log
-pyrosimple-manager/config.py
 
 build.sh
 LICENSE
