@@ -1,7 +1,7 @@
 # ============================
 # Stage 1: Build libtorrent
 # ============================
-FROM alpine:3.21 AS libtorrent-builder
+FROM alpine AS libtorrent-builder
 
 ARG LIBTORRENT_VERSION=0.15.5
 ENV LIBTORRENT_VERSION=${LIBTORRENT_VERSION}
@@ -46,7 +46,7 @@ RUN make DESTDIR=/staging install
 # ============================
 # Stage 2: Build rtorrent
 # ============================
-FROM alpine:3.21 AS rtorrent-builder
+FROM alpine AS rtorrent-builder
 
 ARG RTORRENT_VERSION=0.15.5
 ENV RTORRENT_VERSION=${RTORRENT_VERSION}
