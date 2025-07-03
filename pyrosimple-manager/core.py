@@ -20,40 +20,86 @@ if typing.TYPE_CHECKING:
 # ===================================================================
 # Core Action Functions
 # ===================================================================
-def notify_arr_manual_import(service_type, download_id: 'BTIH', arr_config):
-    """Notifies Sonarr or Radarr using GET /manualimport with downloadId query and X-Api-Key header."""
-    # Uses arr_config dictionary now
-    if not arr_config.get("NOTIFY_ARR_ENABLED", False): print("  Arr notification disabled, skipping."); return
+def notify_arr_scan_downloads(service_type, download_id: 'BTIH', arr_config, hdd_path: str = None):
+    """Notifies Sonarr or Radarr to scan for completed downloads using the command API.
+    
+    Args:
+        service_type: Either 'sonarr' or 'radarr'
+        download_id: Torrent hash for downloadClientId parameter
+        arr_config: Configuration dictionary containing URLs and API keys
+        hdd_path: Path where the movie/episode was moved to on HDD
+    """
+    if not arr_config.get("NOTIFY_ARR_ENABLED", False): 
+        print("  Arr notification disabled, skipping.")
+        return
 
     if service_type == "sonarr":
         base_url = arr_config.get("SONARR_URL", "").rstrip('/')
         api_key = arr_config.get("SONARR_API_KEY", "")
         service_name = "Sonarr"
+        command_name = "DownloadedEpisodesScan"  # Sonarr equivalent
     elif service_type == "radarr":
         base_url = arr_config.get("RADARR_URL", "").rstrip('/')
         api_key = arr_config.get("RADARR_API_KEY", "")
         service_name = "Radarr"
-    else: print(f"  Unknown service type '{service_type}' for notification."); return
-    if not base_url or not api_key: print(f"  {service_name} URL or API Key not configured. Skipping notification."); return
+        command_name = "DownloadedMoviesScan"  # Radarr command for scanning downloaded movies
+    else: 
+        print(f"  Unknown service type '{service_type}' for notification.")
+        return
+        
+    if not base_url or not api_key: 
+        print(f"  {service_name} URL or API Key not configured. Skipping notification.")
+        return
 
-    api_endpoint = f"{base_url}/api/v3/manualimport"
-    headers = {"X-Api-Key": api_key}; params = {"downloadId": download_id}
+    # Use the correct command API endpoint
+    api_endpoint = f"{base_url}/api/v3/command"
+    headers = {
+        "X-Api-Key": api_key,
+        "Content-Type": "application/json"
+    }
+    
+    # Prepare command payload with downloadClientId and path for targeted scanning
+    payload = {
+        "name": command_name,
+        "downloadClientId": str(download_id)
+    }
+    
+    # Add path parameter if provided for more targeted scanning
+    if hdd_path:
+        payload["path"] = hdd_path
+        print(f"  Will scan specific path: {hdd_path}")
     
     if config.DRY_RUN:
-        print(f"  [DRY RUN] Would notify {service_name} via GET {api_endpoint} with downloadId '{download_id}'")
+        print(f"  [DRY RUN] Would notify {service_name} via POST {api_endpoint}")
+        print(f"  [DRY RUN] Command: {payload}")
         return
     
-    print(f"  Notifying {service_name} via GET {api_endpoint} with downloadId '{download_id}' (API Key in header)...")
+    print(f"  Notifying {service_name} to scan for downloaded content...")
+    print(f"  Sending command '{command_name}' with downloadClientId: {download_id}")
+    if hdd_path:
+        print(f"  Target path: {hdd_path}")
+    
     try:
-        response = requests.get(api_endpoint, headers=headers, params=params, timeout=30)
+        response = requests.post(api_endpoint, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
+        
         if response.status_code in [200, 201, 202]:
-             print(f"  {service_name} GET notification successful (Status: {response.status_code}).")
-             try: response_json = response.json(); print(f"  Response JSON sample: {str(response_json)[:200]}...")
-             except requests.exceptions.JSONDecodeError: print(f"  Response Text: {response.text}")
-        else: print(f"  {service_name} GET notification returned unexpected status: {response.status_code}\n  Response: {response.text}")
-    except requests.exceptions.RequestException as e: print(f"  ERROR notifying {service_name} via GET: {e}")
-    except Exception as e: print(f"  An unexpected error occurred during {service_name} GET notification: {e}")
+            print(f"  {service_name} command sent successfully (Status: {response.status_code}).")
+            try: 
+                response_json = response.json()
+                command_id = response_json.get('id', 'Unknown')
+                print(f"  Command queued with ID: {command_id}")
+                print(f"  Response: {str(response_json)[:200]}...")
+            except requests.exceptions.JSONDecodeError: 
+                print(f"  Response Text: {response.text[:200]}...")
+        else: 
+            print(f"  {service_name} command returned unexpected status: {response.status_code}")
+            print(f"  Response: {response.text[:200]}...")
+            
+    except requests.exceptions.RequestException as e: 
+        print(f"  ERROR notifying {service_name}: {e}")
+    except Exception as e: 
+        print(f"  Unexpected error during {service_name} notification: {e}")
 
 
 def relocate_and_delete_ssd(engine: 'RtorrentEngine', torrent_info: 'TorrentInfo', final_dest_base_hdd: str, download_path_ssd: str):
@@ -288,8 +334,8 @@ def process_single_torrent(engine: 'RtorrentEngine', hash_val: 'BTIH'):
 
         # If a matching service was found, send the notification
         if service_to_notify:
-            # Call notify_arr_manual_import from util, passing the config dict
-            notify_arr_manual_import(service_to_notify, hash_val, config.ARR_CONFIG)
+            # Call notify_arr_scan_downloads, passing the config dict
+            notify_arr_scan_downloads(service_to_notify, hash_val, config.ARR_CONFIG, hdd_data_path)
 
         print(f"--- Successfully processed Copy/Verify/Notify for: {hash_val} ---")
     else:
