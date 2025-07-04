@@ -3,6 +3,10 @@
 import os
 import re
 import shutil
+import time
+import signal
+import functools
+from contextlib import contextmanager
 from pyrosimple.torrent.engine import FIELD_REGISTRY
 from pyrosimple.util import matching
 import typing
@@ -22,7 +26,7 @@ if typing.TYPE_CHECKING:
     from pyrosimple.torrent.rtorrent import RtorrentEngine
 
 # ===================================================================
-# Helper Classes
+# Helper Classes and Exceptions
 # ===================================================================
 class BTIH(str):
     """
@@ -64,6 +68,53 @@ class TorrentInfo:
     size: int
     is_multi_file: bool
     label: str
+
+class TimeoutError(Exception):
+    """Raised when an operation times out"""
+    pass
+
+# ===================================================================
+# Timeout and Retry Utilities
+# ===================================================================
+@contextmanager
+def timeout_context(seconds):
+    """Context manager that raises TimeoutError if code takes too long"""
+    def timeout_handler(signum, frame):
+        raise TimeoutError(f"Operation timed out after {seconds} seconds")
+    
+    # Set up signal handler
+    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(seconds)
+    
+    try:
+        yield
+    finally:
+        signal.alarm(0)  # Cancel alarm
+        signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
+
+def retry_with_backoff(max_attempts=3, base_delay=1, max_delay=30):
+    """Decorator for retrying functions with exponential backoff"""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    if attempt == max_attempts:
+                        logger.error(f"Function {func.__name__} failed after {max_attempts} attempts")
+                        raise
+                    
+                    delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+                    logger.warning(f"Attempt {attempt} failed for {func.__name__}: {e}. Retrying in {delay}s...")
+                    time.sleep(delay)
+            
+            raise last_exception
+        return wrapper
+    return decorator
 
 # ===================================================================
 
@@ -126,33 +177,52 @@ def cleanup_destination(path):
     except OSError as e: 
         logger.error(f"Cleanup FAILED: {e}")
 
-def get_torrent_info(engine: 'RtorrentEngine', hash_val: BTIH) -> TorrentInfo:
+@retry_with_backoff(max_attempts=3, base_delay=2)
+def get_torrent_info(engine: 'RtorrentEngine', hash_val: BTIH, wait_for_stability=True) -> TorrentInfo:
     """
-    Gets and parses torrent information using RtorrentEngine
+    Gets and parses torrent information using RtorrentEngine with timeout and retry logic
 
     param engine: The RtorrentEngine instance to use for fetching torrent data.
     param hash_val: The BTIH hash value of the torrent to fetch info for.
+    param wait_for_stability: If True, adds delay to wait for torrent state to stabilize
     return: A TorrentInfo object containing the torrent's name, path, directory, size, is_multi_file status, and label.
     example: TorrentInfo(hash=BTIH('02E5A8D9F7800A063237F0D37467144360D4B70A'), name='daredevil.born.again.s01e08.hdr.2160p.web.h265-successfulcrab.mkv', path='\\downloading\\sonarr\\daredevil.born.again.s01e08.hdr.2160p.web.h265-successfulcrab.mkv', directory='/downloading/sonarr', size=5408683456, is_multi_file=False, label='sonarr')
     """
     logger.debug("Getting torrent info...")
+    
+    # Add initial delay to let torrent state stabilize if requested
+    if wait_for_stability:
+        stability_delay = 3  # seconds
+        logger.info(f"Waiting {stability_delay}s for torrent state to stabilize...")
+        time.sleep(stability_delay)
+    
     try:
-        info_keys = ["name", "path", "directory", "size", "is_multi_file", "label"]
-        sanitized_info_keys = [key for key in info_keys if key in FIELD_REGISTRY]
-        prefetch = [
-            FIELD_REGISTRY[f].requires
-            for f in sanitized_info_keys
-        ]
-        prefetch = [item for sublist in prefetch for item in sublist]
-        item: RtorrentItem = engine.item(hash_val, prefetch)
-        if item is None:
-            logger.error(f"Torrent {hash_val} not found.")
-            return None
-        torrent_info = TorrentInfo(hash_val, *[getattr(item, key, None) for key in info_keys])
-        return torrent_info
+        with timeout_context(30):  # 30 second timeout for getting torrent info
+            info_keys = ["name", "path", "directory", "size", "is_multi_file", "label"]
+            sanitized_info_keys = [key for key in info_keys if key in FIELD_REGISTRY]
+            prefetch = [
+                FIELD_REGISTRY[f].requires
+                for f in sanitized_info_keys
+            ]
+            prefetch = [item for sublist in prefetch for item in sublist]
+            
+            logger.debug(f"Fetching torrent info for {hash_val} with timeout...")
+            item: RtorrentItem = engine.item(hash_val, prefetch)
+            
+            if item is None:
+                logger.error(f"Torrent {hash_val} not found.")
+                return None
+            
+            torrent_info = TorrentInfo(hash_val, *[getattr(item, key, None) for key in info_keys])
+            logger.debug(f"Successfully retrieved info for torrent: {torrent_info.name}")
+            return torrent_info
+            
+    except TimeoutError as e:
+        logger.error(f"Timeout getting torrent info for {hash_val}: {e}")
+        raise
     except Exception as e:
         logger.error(f"Failed to get torrent info for {hash_val}: {e}")
-        return None
+        raise
 
 def get_torrents_by_path(engine: 'RtorrentEngine', path: str, complete=True) -> typing.List['RtorrentItem']:
     """

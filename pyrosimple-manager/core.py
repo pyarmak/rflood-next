@@ -7,7 +7,8 @@ import requests
 import typing
 from util import (
     get_torrent_info, verify_copy,
-    get_available_space_gb, cleanup_destination
+    get_available_space_gb, cleanup_destination,
+    TimeoutError
 )
 # Import configuration constants
 import config
@@ -257,8 +258,18 @@ def process_single_torrent(engine: 'RtorrentEngine', hash_val: 'BTIH'):
     start_process_time = time.time()
     copy_verified = False # Flag to track if copy is successfully verified
 
-    # 1. Get Info using the utility function
-    info = get_torrent_info(engine, hash_val) # Pass engine parameter
+    # 1. Get Info using the utility function with improved error handling
+    try:
+        info = get_torrent_info(engine, hash_val, wait_for_stability=True)
+    except TimeoutError:
+        logger.error(f"Timeout getting torrent info for {hash_val}. This may indicate the torrent is stuck in checking state.")
+        logger.error(f"Exiting processing for {hash_val} due to timeout.")
+        return
+    except Exception as e:
+        logger.error(f"Failed to get torrent info for {hash_val} after retries: {e}")
+        logger.error(f"Exiting processing for {hash_val} due to info fetch failure.")
+        return
+    
     if info is None:
         logger.error(f"Exiting processing for {hash_val} due to info fetch failure.")
         return # Exit if info fetching failed

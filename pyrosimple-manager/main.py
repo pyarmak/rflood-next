@@ -70,12 +70,6 @@ if __name__ == "__main__":
             # If hash provided, process this specific torrent (Copy/Verify/Notify)
             # Calls the function from core.py
             core.process_single_torrent(engine, finished_torrent_hash)
-            
-            # Optional: Display torrent info for debugging
-            torrent_info = get_torrent_info(engine, finished_torrent_hash)
-            if torrent_info:
-                logger.info(f"Processed torrent: {torrent_info.name}")
-                logger.debug(f"Label: {torrent_info.label}, Size: {torrent_info.size/(1024**3):.2f} GB")
         except ValueError as e:
             logger.error(f"Invalid torrent hash provided: {e}")
             sys.exit(1)
