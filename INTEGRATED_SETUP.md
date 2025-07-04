@@ -1,257 +1,448 @@
 # rFlood with Integrated Pyrosimple-Manager
 
-This is an enhanced rFlood container that includes the pyrosimple-manager scripts for automatic torrent management and SSD space optimization.
+An enhanced rFlood container with integrated pyrosimple-manager featuring intelligent background processing, security hardening, and enterprise-grade torrent management capabilities.
 
-## Features
+## 🚀 Features
 
-- **Automatic Processing**: When torrents complete, they are automatically copied from SSD to HDD
-- **Smart Space Management**: Monitors SSD space and relocates older torrents when needed
-- **Arr Integration**: Notifies Sonarr/Radarr after successful copy
-- **Health Monitoring**: Built-in health checks with startup grace period
-- **Comprehensive Logging**: Structured logging with configurable levels
-- **Container Optimized**: Single container solution with proper service management
+### **Background Processing Architecture**
+- **Non-blocking execution**: Script returns immediately to rTorrent, preventing UI freezes
+- **Child process isolation**: Each torrent processes in dedicated background process
+- **Intelligent queueing**: Torrents automatically queue when process limits reached
+- **Process monitoring**: Real-time tracking of background operations
+- **Crash recovery**: Automatic detection and recovery of stuck processes
+
+### **Enterprise Security**
+- **Path traversal protection**: Comprehensive validation prevents directory escape attacks
+- **Input sanitization**: All user inputs validated and sanitized for safe operation
+- **Resource limits**: Configurable process and disk space limits prevent system overload
+- **Atomic file operations**: Transactions designed to be safe and recoverable
+- **Audit logging**: Comprehensive logging for security and debugging
+
+### **Smart Space Management**
+- **SSD cache optimization**: Intelligent relocation of older torrents
+- **File locking**: Single-instance space management prevents race conditions
+- **Configurable thresholds**: Customizable space limits and behavior
+- **Background processing**: Space management runs independently without blocking
+- **Copy verification**: Ensures data integrity with multiple validation methods
+
+### **Advanced Arr Integration**
+- **Targeted notifications**: Uses downloadClientId for efficient Arr scanning
+- **Health monitoring**: Built-in connectivity and API validation
+- **Configurable endpoints**: Support for custom Arr configurations
+- **Error recovery**: Robust error handling for network issues
 
 ## Quick Start
 
 ### 1. Prepare Environment
 
-Copy the environment template and configure your paths:
+Copy and configure your environment:
 
 ```bash
 cd downloads
 cp env.example .env
-# Edit .env with your actual paths and API keys
+# Edit .env with your actual paths, API keys, and settings
 ```
 
-**Critical**: Ensure your volume paths match the environment variables:
+**Critical Environment Variables:**
 
 ```env
-# These paths MUST match your actual volume mounts
+# Core paths - MUST match your volume mounts exactly
 DOWNLOAD_PATH_SSD=/downloads/ssd    # Fast storage for active downloads
-FINAL_DEST_BASE_HDD=/downloads/hdd  # Slow storage for completed files
+FINAL_DEST_BASE_HDD=/downloads/hdd  # Permanent storage for completed files
+
+# Process management
+MAX_CONCURRENT_PROCESSES=3          # Balance performance vs resource usage
+DISK_SPACE_THRESHOLD_GB=100        # Space threshold for cleanup (GB)
+
+# Security and reliability  
+VERIFICATION_ENABLED=true           # Enable copy verification (recommended)
+COPY_RETRY_ATTEMPTS=3              # Retry attempts for failed operations
+
+# Arr integration
+NOTIFY_ARR_ENABLED=true            # Enable Sonarr/Radarr notifications
+SONARR_API_KEY=your_sonarr_key     # Required for Sonarr integration
+RADARR_API_KEY=your_radarr_key     # Required for Radarr integration
 ```
 
-### 2. Build the Container
+### 2. Build and Deploy
 
 ```bash
 cd downloads/rflood-next
 docker build -t rflood-next:latest .
-```
 
-### 3. Deploy
-
-```bash
-cd downloads
+cd ..
 docker compose up -d rflood
 ```
 
-## Configuration
+### 3. Verify Operation
 
-### Environment Variables
+```bash
+# Check container health
+docker exec rflood python /app/pyrosimple-manager/healthcheck.py
 
-All configuration is done via environment variables for container deployment:
+# Monitor real-time status
+docker exec rflood python /app/pyrosimple-manager/main.py --status
+
+# View logs
+docker logs rflood -f
+```
+
+## Configuration Reference
+
+### Core Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DOWNLOAD_PATH_SSD` | `/downloads/ssd` | **CRITICAL**: SSD cache path (fast storage) |
-| `FINAL_DEST_BASE_HDD` | `/downloads/hdd` | **CRITICAL**: HDD storage path (slow storage) |
-| `DISK_SPACE_THRESHOLD_GB` | `100` | Free space threshold (GB) for cleanup |
-| `COPY_RETRY_ATTEMPTS` | `3` | Number of copy retry attempts |
-| `VERIFICATION_ENABLED` | `true` | Enable copy verification (recommended) |
-| `NOTIFY_ARR_ENABLED` | `true` | Enable Arr service notifications |
-| `SONARR_API_KEY` | *(empty)* | Sonarr API key for notifications |
-| `RADARR_API_KEY` | *(empty)* | Radarr API key for notifications |
-| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `DOWNLOAD_PATH_SSD` | `/downloads/ssd` | **CRITICAL**: Fast storage path for active downloads |
+| `FINAL_DEST_BASE_HDD` | `/downloads/hdd` | **CRITICAL**: Permanent storage path for completed files |
+| `SCGI_URL` | `/dev/shm/rtorrent.sock` | rTorrent SCGI connection (socket or HTTP) |
+| `MAX_CONCURRENT_PROCESSES` | `3` | Maximum simultaneous torrent processing operations |
+| `DISK_SPACE_THRESHOLD_GB` | `100` | Free space threshold (GB) to trigger cleanup |
+| `COPY_RETRY_ATTEMPTS` | `3` | Number of retry attempts for failed copy operations |
+| `VERIFICATION_ENABLED` | `true` | Enable copy verification (size/count validation) |
 
-### Volume Mapping
+### Arr Integration
 
-Your Docker Compose should map volumes like this:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NOTIFY_ARR_ENABLED` | `true` | Enable Sonarr/Radarr notifications |
+| `SONARR_URL` | `http://sonarr:8989` | Sonarr API endpoint URL |
+| `SONARR_API_KEY` | *(empty)* | **Required**: Sonarr API key for notifications |
+| `SONARR_TAG` | `sonarr` | Torrent label for TV shows |
+| `RADARR_URL` | `http://radarr:7878` | Radarr API endpoint URL |
+| `RADARR_API_KEY` | *(empty)* | **Required**: Radarr API key for notifications |
+| `RADARR_TAG` | `radarr` | Torrent label for movies |
+
+### Advanced Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `INFO` | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
+| `LOG_FILE` | `/config/log/pyrosimple-manager.log` | Log file location |
+| `LOCK_DIR` | `/config/pyrosimple-manager-locks` | Directory for locks and queue files |
+
+### Volume Mapping Requirements
 
 ```yaml
-volumes:
-  - /your/config/path:/config                    # Container config
-  - /your/fast/storage:/downloads/ssd           # SSD cache
-  - /your/slow/storage:/downloads/hdd           # HDD permanent storage
+services:
+  rflood:
+    volumes:
+      - /your/config/path:/config                 # Container configuration
+      - /your/fast/ssd/storage:/downloads/ssd    # CRITICAL: Fast SSD cache
+      - /your/permanent/storage:/downloads/hdd   # CRITICAL: Permanent HDD storage
 ```
 
-## How It Works
+## Operational Guide
 
-### Processing Flow
+### Background Processing Flow
 
-1. **Download Starts**: Torrent downloads to SSD cache (`DOWNLOAD_PATH_SSD`)
-2. **Download Completes**: rtorrent triggers `event.download.finished` 
-3. **Automatic Processing**: Pyrosimple-manager:
-   - Sets completion timestamp (`tm_completed`)
-   - Copies data from SSD to HDD with verification
-   - Notifies Sonarr/Radarr if configured
-4. **Space Management**: Hourly check relocates oldest torrents if SSD space is low
+```mermaid
+graph TD
+    A[rTorrent Event] --> B{Process Limit?}
+    B -->|Available| C[Spawn Background Process]
+    B -->|At Limit| D[Add to Queue]
+    C --> E[Validate & Copy SSD→HDD]
+    E --> F[Verify Copy Integrity]
+    F --> G[Notify Sonarr/Radarr]
+    G --> H[Mark Complete]
+    I[Space Management] --> J[Process Queue First]
+    J --> K[Check SSD Space]
+    K --> L[Relocate Old Torrents]
+    D --> M[Processed by Space Management]
+```
 
-### Directory Structure
+### Directory Structure Inside Container
 
-Inside the container:
 ```
 /app/
-├── rtorrent              # rtorrent binary
-├── flood                 # Flood UI
-└── pyrosimple-manager/   # Management scripts
-    ├── main.py           # Main entry point
-    ├── core.py           # Core functionality  
-    ├── util.py           # Utility functions
-    ├── config.py         # Configuration (symlink to /config)
-    ├── logger.py         # Logging system
-    └── healthcheck.py    # Health monitoring
+├── rtorrent                       # rTorrent binary
+├── flood/                         # Flood UI files
+└── pyrosimple-manager/           # Management scripts
+    ├── main.py                   # Main entry point
+    ├── core.py                   # Core processing logic
+    ├── util.py                   # Utility functions
+    ├── config.py                 # Configuration management
+    ├── logger.py                 # Logging system
+    └── healthcheck.py            # Health monitoring
 
 /config/
-├── rtorrent.rc          # rtorrent configuration
-├── pyrosimple-manager/
-│   └── config.py        # Pyrosimple-manager config
-└── log/
-    └── pyrosimple-manager.log
+├── rtorrent.rc                   # rTorrent configuration
+├── log/
+│   └── pyrosimple-manager.log   # Application logs
+└── pyrosimple-manager-locks/     # Process coordination
+    ├── queue/                    # Pending torrent queue
+    │   └── *.queue              # Individual queue files
+    └── *.lock                   # Process lock files
+
+/downloads/
+├── ssd/                         # Fast SSD cache
+│   ├── sonarr/                 # TV shows (active downloads)
+│   └── radarr/                 # Movies (active downloads)
+└── hdd/                        # Permanent HDD storage
+    ├── sonarr/                 # TV shows (completed)
+    └── radarr/                 # Movies (completed)
+```
+
+## Command Reference
+
+### Status and Monitoring
+
+```bash
+# Comprehensive status check
+docker exec rflood python /app/pyrosimple-manager/main.py --status
+
+# Health check with detailed output
+docker exec rflood python /app/pyrosimple-manager/healthcheck.py
+
+# Real-time log monitoring
+docker exec rflood tail -f /config/log/pyrosimple-manager.log
+
+# Configuration validation
+docker exec rflood python -c "import config; config.show_config_summary()"
+```
+
+### Queue Management
+
+```bash
+# Process queued torrents manually
+docker exec rflood python /app/pyrosimple-manager/main.py --process-queue
+
+# Clear all queued torrents (emergency)
+docker exec rflood python /app/pyrosimple-manager/main.py --clear-queue
+
+# Force space management run
+docker exec rflood python /app/pyrosimple-manager/main.py
+```
+
+### Testing and Debugging
+
+```bash
+# Test mode (no actual changes)
+docker exec rflood python /app/pyrosimple-manager/main.py --dry-run
+
+# Debug level logging
+docker exec rflood env LOG_LEVEL=DEBUG python /app/pyrosimple-manager/main.py --dry-run
+
+# Test specific torrent processing
+docker exec rflood python /app/pyrosimple-manager/main.py --dry-run TORRENT_HASH
 ```
 
 ## Monitoring and Troubleshooting
 
-### Health Status
+### Status Monitoring
 
-The container includes comprehensive health monitoring:
+The `--status` command provides comprehensive system information:
 
 ```bash
-# Check overall health
-docker exec rflood python /app/pyrosimple-manager/healthcheck.py
+$ docker exec rflood python /app/pyrosimple-manager/main.py --status
 
-# Check configuration
-docker exec rflood python -c "import config; config.show_config_summary()"
+Checking background process status...
+Found 2 running background processes:
+  PID 1234: python main.py --child-process --child-hash ABCD1234...
+  PID 1235: python main.py --child-process --child-hash EFGH5678...
+
+Space management process is currently running
+
+Queue status: 3 torrent(s) waiting for processing
+  - HASH1 (queued 2.5 minutes ago)
+  - HASH2 (queued 1.2 minutes ago)  
+  - HASH3 (queued 0.3 minutes ago)
 ```
 
-### View Logs
+### Health Monitoring
 
 ```bash
-# Container logs (includes all services)
-docker logs rflood
+$ docker exec rflood python /app/pyrosimple-manager/healthcheck.py
 
-# Pyrosimple-manager specific logs  
+=== Pyrosimple-Manager Health Check ===
+✓ Configuration validation passed
+✓ rTorrent connection successful
+✓ SSD path accessible and writable
+✓ HDD path accessible and writable
+✓ Lock directory accessible
+✓ Sonarr API connectivity confirmed
+✓ Radarr API connectivity confirmed
+✓ No stuck processes detected
+
+System Status: HEALTHY
+```
+
+### Log Analysis
+
+**Main Application Logs:**
+```bash
+# Follow live logs
 docker exec rflood tail -f /config/log/pyrosimple-manager.log
 
-# Debug level logging
-docker exec rflood env LOG_LEVEL=DEBUG python /app/pyrosimple-manager/main.py --dry-run
+# Search for errors
+docker exec rflood grep ERROR /config/log/pyrosimple-manager.log
+
+# View recent activity
+docker exec rflood tail -50 /config/log/pyrosimple-manager.log
 ```
 
-### Manual Operations
-
+**Container Logs:**
 ```bash
-# Process specific torrent
-docker exec rflood python /app/pyrosimple-manager/main.py TORRENT_HASH
+# All container output
+docker logs rflood
 
-# Run space management check
-docker exec rflood python /app/pyrosimple-manager/main.py
+# Follow live container logs
+docker logs rflood -f
 
-# Test mode (no changes)
-docker exec rflood python /app/pyrosimple-manager/main.py --dry-run
-
-# Test Sonarr connectivity
-docker exec rflood python -c "
-import requests, config
-r = requests.get(f'{config.SONARR_URL}/api/v3/system/status', 
-                headers={'X-Api-Key': config.SONARR_API_KEY})
-print(f'Sonarr: {r.status_code}')"
+# Last 100 lines
+docker logs rflood --tail 100
 ```
 
-## Common Issues and Solutions
+## Troubleshooting Guide
 
-### 🚨 Container Won't Start
+### 🚨 Common Issues
 
-**Symptom**: Container exits immediately or fails health checks
+#### **Queue Building Up**
 
-**Solutions**:
-1. Check environment variables are set correctly
-2. Verify volume paths exist and are writable
-3. Check logs: `docker logs rflood`
+**Symptoms**: Many torrents stuck in queue, slow processing
 
+**Diagnosis:**
 ```bash
+docker exec rflood python /app/pyrosimple-manager/main.py --status
+```
+
+**Solutions:**
+1. **Increase process limit**: Set `MAX_CONCURRENT_PROCESSES=5` (or higher)
+2. **Manual queue processing**: `docker exec rflood python /app/pyrosimple-manager/main.py --process-queue`
+3. **Check system resources**: Ensure sufficient CPU/memory available
+
+#### **Path Validation Errors**
+
+**Symptoms**: "Path outside safe directory" errors in logs
+
+**Diagnosis:**
+```bash
+# Check volume mounts
+docker inspect rflood | grep Mounts -A 20
+
+# Verify environment variables
+docker exec rflood env | grep -E "(DOWNLOAD_PATH|FINAL_DEST)"
+```
+
+**Solutions:**
+1. **Verify volume mounts** match environment variables exactly
+2. **Check permissions** on mounted directories
+3. **Validate path configuration** in environment file
+
+#### **Space Management Not Running**
+
+**Symptoms**: SSD fills up, no automatic cleanup
+
+**Diagnosis:**
+```bash
+# Check if space management is stuck
+docker exec rflood python /app/pyrosimple-manager/main.py --status
+
+# Check available space
+docker exec rflood df -h /downloads/ssd
+```
+
+**Solutions:**
+1. **Check lock files**: Remove stuck lock files in `/config/pyrosimple-manager-locks/`
+2. **Manual space management**: `docker exec rflood python /app/pyrosimple-manager/main.py`
+3. **Adjust threshold**: Lower `DISK_SPACE_THRESHOLD_GB` value
+
+#### **Arr Services Not Importing**
+
+**Symptoms**: Files copied but not imported by Sonarr/Radarr
+
+**Diagnosis:**
+```bash
+# Test API connectivity
+docker exec rflood python /app/pyrosimple-manager/healthcheck.py | grep -A5 "Arr Services"
+
+# Check API keys
+docker exec rflood env | grep API_KEY
+```
+
+**Solutions:**
+1. **Validate API keys** are correct and have proper permissions
+2. **Check network connectivity** between containers
+3. **Review Arr logs** for import errors
+4. **Verify download client settings** in Arr services
+
+#### **Container Won't Start**
+
+**Symptoms**: Container exits immediately, health checks fail
+
+**Diagnosis:**
+```bash
+# Check container logs
+docker logs rflood
+
 # Validate configuration
-docker run --rm -it rflood-next:latest python -c "
+docker run --rm -it --env-file .env rflood-next:latest python -c "
 import config
 errors, warnings = config.validate_config()
 print('Errors:', errors)
 print('Warnings:', warnings)"
 ```
 
-### 🚨 Torrents Not Being Processed
+**Solutions:**
+1. **Fix environment variables** identified in validation
+2. **Check volume permissions** and ownership
+3. **Verify base image** is properly built with all dependencies
 
-**Symptoms**: Completed torrents remain on SSD, no copying occurs
+### 🔧 Performance Optimization
 
-**Solutions**:
-1. Check rtorrent configuration has the event handler:
-   ```bash
-   docker exec rflood grep pyrosimple /config/rtorrent.rc
-   ```
+#### **Process Tuning**
+```env
+# Conservative (slower, less resource usage)
+MAX_CONCURRENT_PROCESSES=2
 
-2. Verify timestamps are being set:
-   ```bash
-   docker exec rflood python -c "
-   import pyrosimple, config
-   engine = pyrosimple.connect(config.SCGI_URL)
-   for item in engine.items():
-       print(f'{item.name}: tm_completed={getattr(item, \"tm_completed\", \"MISSING\")}')"
-   ```
+# Aggressive (faster, more resource usage)  
+MAX_CONCURRENT_PROCESSES=5
 
-3. Check for errors in logs:
-   ```bash
-   docker exec rflood grep ERROR /config/log/pyrosimple-manager.log
-   ```
+# Balanced (recommended for most systems)
+MAX_CONCURRENT_PROCESSES=3
+```
 
-### 🚨 Sonarr/Radarr Not Importing
+#### **Storage Optimization**
+```env
+# More aggressive cleanup (frees space sooner)
+DISK_SPACE_THRESHOLD_GB=50
 
-**Symptoms**: Files copied but Arr services don't import
+# Conservative cleanup (keeps more on SSD)
+DISK_SPACE_THRESHOLD_GB=150
+```
 
-**Solutions**:
-1. Verify API keys are correct:
-   ```bash
-   docker exec rflood env | grep API_KEY
-   ```
+#### **Network Optimization**
+- Use local SCGI sockets instead of network connections
+- Place Arr services on same Docker network
+- Consider dedicated storage networks for high throughput
 
-2. Test connectivity:
-   ```bash
-   # Test from container
-   docker exec rflood python /app/pyrosimple-manager/healthcheck.py | grep -A5 "Arr Services"
-   ```
+### 🔐 Security Considerations
 
-3. Check Arr service logs for import errors
+#### **File System Security**
+- All paths validated against base directories
+- Filename sanitization prevents filesystem attacks
+- Safe symlink handling prevents directory traversal
 
-### 🚨 SSD Space Not Being Freed
+#### **Process Security**  
+- Child process isolation limits blast radius
+- Resource limits prevent DoS via resource exhaustion
+- Clean shutdown procedures handle signals properly
 
-**Symptoms**: SSD fills up, torrents not relocated
-
-**Solutions**:
-1. Check current space and threshold:
-   ```bash
-   docker exec rflood df -h /downloads/ssd
-   docker exec rflood python -c "import config; print(f'Threshold: {config.DISK_SPACE_THRESHOLD_GB}GB')"
-   ```
-
-2. Manual space management:
-   ```bash
-   docker exec rflood python /app/pyrosimple-manager/main.py
-   ```
-
-3. Check for completed torrents with timestamps:
-   ```bash
-   docker exec rflood python -c "
-   import pyrosimple, config
-   engine = pyrosimple.connect(config.SCGI_URL)
-   completed = [item for item in engine.items() if getattr(item, 'complete', False)]
-   print(f'Found {len(completed)} completed torrents')"
-   ```
+#### **Network Security**
+- API keys properly validated before use
+- Timeout handling prevents hanging connections
+- Error handling prevents information disclosure
 
 ## Advanced Configuration
 
 ### Custom Processing Rules
 
-You can customize processing by editing the container configuration:
-
 ```bash
-# Access the container config
+# Edit container configuration
 docker exec -it rflood vi /config/pyrosimple-manager/config.py
+
+# Restart container to apply changes
+docker restart rflood
 ```
 
 Example customizations:
@@ -259,7 +450,7 @@ Example customizations:
 # Increase retry attempts for unreliable storage
 COPY_RETRY_ATTEMPTS = 5
 
-# Lower space threshold for more aggressive cleanup  
+# More aggressive space management
 DISK_SPACE_THRESHOLD_GB = 50
 
 # Disable verification for speed (not recommended)
@@ -268,80 +459,102 @@ VERIFICATION_ENABLED = False
 
 ### Integration with External Services
 
-The pyrosimple-manager can be called from external scripts:
-
 ```bash
-# From cron or external scripts
+# Call from external scripts
 docker exec rflood python /app/pyrosimple-manager/main.py HASH
 
-# Via API integration
-curl -X POST your-api/webhook \
+# API integration example
+curl -X POST webhook-service/torrent-completed \
   -d "docker exec rflood python /app/pyrosimple-manager/main.py $TORRENT_HASH"
 ```
 
 ### Development and Testing
 
-For development work:
-
 ```bash
-# Mount scripts as volume for live editing
+# Mount development scripts
 docker run -v ./pyrosimple-manager:/app/pyrosimple-manager:ro rflood-next
 
-# Run tests
-docker exec rflood python -m pytest /app/pyrosimple-manager/tests/
-
-# Enable debug logging
+# Run with debug logging
 docker exec rflood env LOG_LEVEL=DEBUG python /app/pyrosimple-manager/main.py
+
+# Test configuration changes
+docker exec rflood python /app/pyrosimple-manager/main.py --dry-run
 ```
 
-## Migration from Existing Setups
+## Migration Guide
 
 ### From Manual Scripts
 
-If you have existing torrent management scripts:
-
-1. **Backup existing configuration**:
-   ```bash
-   cp ~/.rtorrent.rc ~/.rtorrent.rc.backup
-   ```
-
-2. **Update environment variables** to match your current paths
-
-3. **Test with dry-run mode** before going live:
-   ```bash
-   docker exec rflood python /app/pyrosimple-manager/main.py --dry-run
-   ```
+1. **Backup existing configuration**
+2. **Test with `--dry-run` mode** extensively
+3. **Monitor queue behavior** during transition
+4. **Update rTorrent event handlers** to use new script
 
 ### From Other Containers
 
-When migrating from other rtorrent containers:
+1. **Export torrent session** data
+2. **Map existing volume paths** to new environment variables
+3. **Update Arr download client** settings
+4. **Verify path mappings** match existing setup
 
-1. **Export torrent session** from old container
-2. **Copy session files** to new config directory  
-3. **Verify path mappings** match your existing setup
-4. **Update Arr service** download client settings
+## Security and Compliance
 
-## Performance Tuning
+### Security Features
 
-### SSD Optimization
+- **Input validation**: All inputs validated for type, range, and format
+- **Path sanitization**: Filesystem paths validated against allowed directories
+- **Process isolation**: Each operation runs in isolated child process
+- **Resource limits**: Configurable limits prevent system exhaustion
+- **Audit logging**: All operations logged for security review
 
-- Set `DISK_SPACE_THRESHOLD_GB` to 10-20% of your SSD capacity
-- Use fast file systems (ext4, xfs) for SSD cache
-- Consider separate SSD partitions for downloads vs system
+### Compliance Considerations
 
-### Network Optimization  
+- **Data integrity**: Copy verification ensures data consistency
+- **Error recovery**: Robust error handling prevents data loss
+- **Access control**: File operations limited to configured directories
+- **Monitoring**: Comprehensive logging supports compliance audits
 
-- Ensure good connectivity between container and Arr services
-- Use dedicated networks for internal container communication
-- Monitor network latency if services are on different hosts
+## Support and Maintenance
 
-## Support
+### Regular Maintenance
 
-For issues and feature requests:
+```bash
+# Weekly health check
+docker exec rflood python /app/pyrosimple-manager/healthcheck.py
 
-1. **Check logs first**: Enable DEBUG logging and examine output
-2. **Validate configuration**: Use built-in validation tools
-3. **Test connectivity**: Use health check and manual tests
-4. **Review documentation**: This guide covers most common scenarios
+# Monitor queue status
+docker exec rflood python /app/pyrosimple-manager/main.py --status
 
-The container is designed to be self-diagnosing - most issues will be evident in the logs and health checks. 
+# Review logs for errors
+docker exec rflood grep ERROR /config/log/pyrosimple-manager.log
+```
+
+### Performance Monitoring
+
+```bash
+# Check processing times
+docker exec rflood grep "Finished.*seconds" /config/log/pyrosimple-manager.log
+
+# Monitor space usage
+docker exec rflood df -h /downloads/ssd /downloads/hdd
+
+# Track queue length over time
+docker exec rflood python /app/pyrosimple-manager/main.py --status | grep "Queue status"
+```
+
+### Backup Recommendations
+
+**Critical Data:**
+- `/config/` directory (configuration and logs)
+- Queue files in `/config/pyrosimple-manager-locks/queue/`
+- Environment variable configuration
+
+**Recovery Procedures:**
+1. Restore configuration files
+2. Rebuild container with same environment
+3. Verify all volume mounts are correct
+4. Run health check to confirm operation
+
+---
+
+This integration provides enterprise-grade torrent management with security, reliability, and performance optimizations suitable for production deployments. 

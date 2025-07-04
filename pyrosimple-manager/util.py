@@ -6,6 +6,7 @@ import shutil
 import time
 import signal
 import functools
+import fcntl
 from contextlib import contextmanager
 from pyrosimple.torrent.engine import FIELD_REGISTRY
 from pyrosimple.util import matching
@@ -72,6 +73,269 @@ class TorrentInfo:
 class TimeoutError(Exception):
     """Raised when an operation times out"""
     pass
+
+class LockError(Exception):
+    """Raised when unable to acquire a required lock"""
+    pass
+
+# ===================================================================
+# Locking Utilities
+# ===================================================================
+@contextmanager
+def file_lock(lock_file_path, timeout=10):
+    """
+    File-based locking mechanism to prevent race conditions.
+    Uses fcntl for POSIX systems (Linux containers) with exponential backoff.
+    """
+    lock_file = None
+    try:
+        # Create lock file directory if it doesn't exist
+        lock_dir = os.path.dirname(lock_file_path)
+        os.makedirs(lock_dir, exist_ok=True)
+        
+        # Open lock file
+        lock_file = open(lock_file_path, 'w')
+        
+        # Try to acquire lock with exponential backoff
+        start_time = time.time()
+        attempt = 0
+        max_delay = 2.0  # Maximum delay between attempts
+        
+        while time.time() - start_time < timeout:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                logger.debug(f"Acquired lock: {lock_file_path}")
+                
+                # Write PID to lock file for debugging
+                lock_file.write(f"{os.getpid()}\n")
+                lock_file.flush()
+                
+                yield  # Lock acquired successfully
+                return
+                
+            except IOError:
+                attempt += 1
+                # Exponential backoff with jitter
+                delay = min(0.1 * (2 ** attempt), max_delay)
+                # Add small random jitter to prevent thundering herd
+                import random
+                delay += random.uniform(0, 0.1)
+                
+                time.sleep(delay)
+        
+        # Timeout occurred
+        raise LockError(f"Could not acquire lock {lock_file_path} within {timeout} seconds")
+        
+    finally:
+        if lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                lock_file.close()
+                # Remove lock file
+                if os.path.exists(lock_file_path):
+                    os.unlink(lock_file_path)
+                logger.debug(f"Released lock: {lock_file_path}")
+            except Exception as e:
+                logger.warning(f"Error releasing lock {lock_file_path}: {e}")
+
+def get_lock_file_path(lock_name):
+    """Get the full path for a lock file"""
+    import config
+    return os.path.join(config.LOCK_DIR, f"{lock_name}.lock")
+
+def get_queue_dir():
+    """Get the directory path for pending torrent queue"""
+    import config
+    return os.path.join(config.LOCK_DIR, 'queue')
+
+def queue_torrent_for_processing(hash_val):
+    """Add a torrent hash to the processing queue"""
+    try:
+        queue_dir = get_queue_dir()
+        os.makedirs(queue_dir, exist_ok=True)
+        
+        # Create a queue file with timestamp
+        timestamp = int(time.time())
+        queue_file = os.path.join(queue_dir, f"{hash_val}_{timestamp}.queue")
+        
+        with open(queue_file, 'w') as f:
+            f.write(f"{hash_val}\n{timestamp}\n")
+        
+        logger.info(f"Queued torrent {hash_val} for later processing")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to queue torrent {hash_val}: {e}")
+        return False
+
+def get_queue_status():
+    """Get status information about the current queue (optimized for status checks)"""
+    try:
+        queue_dir = get_queue_dir()
+        if not os.path.exists(queue_dir):
+            return {'count': 0, 'oldest_timestamp': None, 'items': []}
+        
+        # For status checks, we only need count and oldest timestamp
+        # Don't read file contents unless necessary
+        queue_files = [f for f in os.listdir(queue_dir) if f.endswith('.queue')]
+        count = len(queue_files)
+        
+        if count == 0:
+            return {'count': 0, 'oldest_timestamp': None, 'items': []}
+        
+        # Find oldest timestamp from filenames (more efficient than reading files)
+        oldest_timestamp = None
+        for filename in queue_files:
+            try:
+                # Extract timestamp from filename: hash_timestamp.queue
+                parts = filename.replace('.queue', '').split('_')
+                if len(parts) >= 2:
+                    timestamp = int(parts[-1])  # Last part should be timestamp
+                    if oldest_timestamp is None or timestamp < oldest_timestamp:
+                        oldest_timestamp = timestamp
+            except (ValueError, IndexError):
+                continue
+        
+        return {
+            'count': count,
+            'oldest_timestamp': oldest_timestamp,
+            'items': []  # Don't populate items for status checks (efficiency)
+        }
+    except Exception as e:
+        logger.error(f"Error getting queue status: {e}")
+        return {'count': 0, 'oldest_timestamp': None, 'items': []}
+
+def get_queued_torrents():
+    """Get list of queued torrents sorted by timestamp (only when actually processing)"""
+    try:
+        queue_dir = get_queue_dir()
+        if not os.path.exists(queue_dir):
+            return []
+        
+        queued_items = []
+        
+        # Pre-filter files to avoid unnecessary file operations
+        queue_files = [f for f in os.listdir(queue_dir) if f.endswith('.queue')]
+        
+        for filename in queue_files:
+            filepath = os.path.join(queue_dir, filename)
+            try:
+                # Try to extract info from filename first (more efficient)
+                parts = filename.replace('.queue', '').split('_')
+                if len(parts) >= 2:
+                    hash_val = '_'.join(parts[:-1])  # Everything except last part
+                    timestamp = int(parts[-1])  # Last part is timestamp
+                    
+                    # Validate by reading file only if filename parsing succeeded
+                    if os.path.exists(filepath):
+                        queued_items.append({
+                            'hash': hash_val,
+                            'timestamp': timestamp,
+                            'filepath': filepath
+                        })
+                else:
+                    # Fallback to reading file if filename doesn't match expected format
+                    with open(filepath, 'r') as f:
+                        lines = f.read().strip().split('\n')
+                        if len(lines) >= 2:
+                            hash_val = lines[0]
+                            timestamp = int(lines[1])
+                            queued_items.append({
+                                'hash': hash_val,
+                                'timestamp': timestamp,
+                                'filepath': filepath
+                            })
+            except Exception as e:
+                logger.warning(f"Error reading queue file {filepath}: {e}")
+                # Remove corrupted queue file
+                try:
+                    os.unlink(filepath)
+                except:
+                    pass
+        
+        # Sort by timestamp (oldest first)
+        return sorted(queued_items, key=lambda x: x['timestamp'])
+        
+    except Exception as e:
+        logger.error(f"Error getting queued torrents: {e}")
+        return []
+
+def remove_from_queue(hash_val):
+    """Remove a torrent from the processing queue"""
+    try:
+        queue_dir = get_queue_dir()
+        if not os.path.exists(queue_dir):
+            return True
+        
+        # Find and remove queue files for this hash
+        removed = False
+        for filename in os.listdir(queue_dir):
+            if filename.startswith(f"{hash_val}_") and filename.endswith('.queue'):
+                filepath = os.path.join(queue_dir, filename)
+                try:
+                    os.unlink(filepath)
+                    logger.debug(f"Removed {hash_val} from queue")
+                    removed = True
+                except Exception as e:
+                    logger.warning(f"Error removing queue file {filepath}: {e}")
+        
+        return removed
+        
+    except Exception as e:
+        logger.error(f"Error removing {hash_val} from queue: {e}")
+        return False
+
+def clear_queue():
+    """Clear all items from the processing queue"""
+    try:
+        queue_dir = get_queue_dir()
+        if not os.path.exists(queue_dir):
+            logger.info("Queue directory doesn't exist - nothing to clear")
+            return True
+        
+        removed_count = 0
+        for filename in os.listdir(queue_dir):
+            if filename.endswith('.queue'):
+                filepath = os.path.join(queue_dir, filename)
+                try:
+                    os.unlink(filepath)
+                    removed_count += 1
+                except Exception as e:
+                    logger.warning(f"Error removing queue file {filepath}: {e}")
+        
+        logger.info(f"Cleared {removed_count} item(s) from queue")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error clearing queue: {e}")
+        return False
+
+def is_space_management_running():
+    """Check if space management is currently running"""
+    lock_file = get_lock_file_path('space_management')
+    
+    # Check if lock file exists
+    if not os.path.exists(lock_file):
+        return False
+    
+    # Try to read PID from lock file
+    try:
+        with open(lock_file, 'r') as f:
+            pid_str = f.read().strip()
+            if pid_str.isdigit():
+                pid = int(pid_str)
+                # Check if process is still running
+                try:
+                    os.kill(pid, 0)  # Signal 0 just checks if process exists
+                    return True
+                except OSError:
+                    # Process doesn't exist, remove stale lock file
+                    os.unlink(lock_file)
+                    return False
+    except Exception as e:
+        logger.warning(f"Error checking space management lock: {e}")
+    
+    return False
 
 # ===================================================================
 # Timeout and Retry Utilities
@@ -297,5 +561,70 @@ def verify_copy(src_path, dst_path, is_multi):
     except OSError as e: 
         logger.error(f"Verification ERROR: Could not get stats for paths '{src_path}' or '{dst_path}': {e}")
         return False
+
+# Global cache for process monitoring (avoid frequent expensive scans)
+_process_cache = {'data': None, 'timestamp': 0, 'ttl': 5}  # 5 second TTL
+
+def check_running_processes():
+    """Check for running pyrosimple-manager child processes (with caching)"""
+    import psutil
+    import os
+    
+    # Check cache first
+    current_time = time.time()
+    if (_process_cache['data'] is not None and 
+        current_time - _process_cache['timestamp'] < _process_cache['ttl']):
+        logger.debug("Using cached process list")
+        return _process_cache['data']
+    
+    try:
+        current_pid = os.getpid()
+        child_processes = []
+        
+        for process in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if (process.info['name'] and 'python' in process.info['name'].lower() and 
+                    process.info['cmdline'] and 
+                    any('pyrosimple-manager' in arg for arg in process.info['cmdline']) and
+                    any('--child-process' in arg for arg in process.info['cmdline']) and
+                    process.info['pid'] != current_pid):
+                    
+                    child_processes.append({
+                        'pid': process.info['pid'],
+                        'cmdline': ' '.join(process.info['cmdline'])
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        # Update cache
+        _process_cache['data'] = child_processes
+        _process_cache['timestamp'] = current_time
+        logger.debug(f"Updated process cache with {len(child_processes)} processes")
+        
+        return child_processes
+    except ImportError:
+        logger.warning("psutil not available - cannot check running processes")
+        return []
+    except Exception as e:
+        logger.warning(f"Error checking running processes: {e}")
+        return []
+
+def log_process_status():
+    """Log current background process status"""
+    processes = check_running_processes()
+    if processes:
+        logger.info(f"Found {len(processes)} running background processes:")
+        for proc in processes:
+            logger.info(f"  PID {proc['pid']}: {proc['cmdline']}")
+    else:
+        logger.debug("No background processes currently running")
+
+def invalidate_process_cache():
+    """Invalidate the process cache (call when starting/stopping processes)"""
+    global _process_cache
+    _process_cache['data'] = None
+    _process_cache['timestamp'] = 0
+    logger.debug("Process cache invalidated")
+
 # ===================================================================
 

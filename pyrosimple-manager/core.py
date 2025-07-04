@@ -8,7 +8,7 @@ import typing
 from util import (
     get_torrent_info, verify_copy,
     get_available_space_gb, cleanup_destination,
-    TimeoutError
+    TimeoutError, file_lock, get_lock_file_path
 )
 # Import configuration constants
 import config
@@ -372,6 +372,22 @@ def process_single_torrent(engine: 'RtorrentEngine', hash_val: 'BTIH'):
 def manage_ssd_space(engine: 'RtorrentEngine'):
     """Checks SSD space and relocates oldest completed torrents from SSD to HDD if needed."""
     logger.info("--- Checking SSD Space and Managing Older Torrents ---")
+    
+    # Use file locking to prevent race conditions
+    lock_file = get_lock_file_path('space_management')
+    
+    try:
+        with file_lock(lock_file, timeout=5):
+            logger.info("Acquired space management lock - proceeding with space check")
+            _manage_ssd_space_locked(engine)
+    except Exception as e:
+        if "Could not acquire lock" in str(e):
+            logger.info("Space management already running in another process - skipping")
+        else:
+            logger.error(f"Error during space management: {e}")
+
+def _manage_ssd_space_locked(engine: 'RtorrentEngine'):
+    """Internal space management function that runs with lock acquired"""
     # Use get_available_space_gb from util, passing config path
     available_gb = get_available_space_gb(config.DOWNLOAD_PATH_SSD)
     if available_gb is None: 

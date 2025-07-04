@@ -13,6 +13,9 @@ DISK_SPACE_THRESHOLD_GB = int(os.getenv('DISK_SPACE_THRESHOLD_GB', '100'))
 COPY_RETRY_ATTEMPTS = int(os.getenv('COPY_RETRY_ATTEMPTS', '3'))
 VERIFICATION_ENABLED = os.getenv('VERIFICATION_ENABLED', 'true').lower() == 'true'
 
+# --- Process Management ---
+MAX_CONCURRENT_PROCESSES = int(os.getenv('MAX_CONCURRENT_PROCESSES', '3'))
+
 # --- Notifications ---
 NOTIFY_ARR_ENABLED = os.getenv('NOTIFY_ARR_ENABLED', 'true').lower() == 'true'
 
@@ -41,6 +44,9 @@ RADARR_TAG = os.getenv('RADARR_TAG', 'radarr')
 # --- Logging Configuration ---
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 LOG_FILE = os.getenv('LOG_FILE', '/config/log/pyrosimple-manager.log')
+
+# --- Lock Files ---
+LOCK_DIR = os.getenv('LOCK_DIR', '/config/pyrosimple-manager-locks')
 
 # ===================================================================
 # Derived Configuration
@@ -92,6 +98,12 @@ def validate_config():
     elif COPY_RETRY_ATTEMPTS > 10:
         warnings.append(f"COPY_RETRY_ATTEMPTS ({COPY_RETRY_ATTEMPTS}) seems excessive")
     
+    # Check concurrent processes limit
+    if MAX_CONCURRENT_PROCESSES < 1:
+        errors.append("MAX_CONCURRENT_PROCESSES must be at least 1")
+    elif MAX_CONCURRENT_PROCESSES > 10:
+        warnings.append(f"MAX_CONCURRENT_PROCESSES ({MAX_CONCURRENT_PROCESSES}) seems excessive - consider system resources")
+    
     # Check paths exist (at runtime)
     if os.path.exists('/config'):  # Only check if we're actually running in container
         if not os.path.exists(DOWNLOAD_PATH_SSD):
@@ -112,6 +124,13 @@ def validate_config():
         except Exception as e:
             warnings.append(f"Could not create log directory {log_dir}: {e}")
     
+    # Validate lock directory
+    if os.path.exists('/config') and not os.path.exists(LOCK_DIR):
+        try:
+            os.makedirs(LOCK_DIR, exist_ok=True)
+        except Exception as e:
+            warnings.append(f"Could not create lock directory {LOCK_DIR}: {e}")
+    
     return errors, warnings
 
 # Display configuration info when imported
@@ -122,9 +141,11 @@ def show_config_summary():
     print(f"HDD Path: {FINAL_DEST_BASE_HDD}")
     print(f"Space Threshold: {DISK_SPACE_THRESHOLD_GB} GB")
     print(f"Retry Attempts: {COPY_RETRY_ATTEMPTS}")
+    print(f"Max Concurrent Processes: {MAX_CONCURRENT_PROCESSES}")
     print(f"Verification: {'Enabled' if VERIFICATION_ENABLED else 'Disabled'}")
     print(f"Arr Notifications: {'Enabled' if NOTIFY_ARR_ENABLED else 'Disabled'}")
     print(f"Log Level: {LOG_LEVEL}")
+    print(f"Lock Directory: {LOCK_DIR}")
     print("=" * 40)
 
 # Run validation when module is imported (but not during tests)

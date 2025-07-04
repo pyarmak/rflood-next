@@ -1,159 +1,275 @@
 # rTorrent SSD Cache Manager
 
-A Python script to manage rtorrent downloads by automatically copying completed torrents from SSD cache to HDD storage, with optional Sonarr/Radarr integration.
+A robust Python script to manage rTorrent downloads with intelligent SSD caching, background processing, and automatic space management. Features include intelligent queueing, Sonarr/Radarr integration, and comprehensive security protections.
 
 ## Features
 
-- **Automatic Copy & Verify**: Copies completed torrents from SSD to HDD with integrity verification
-- **SSD Space Management**: Automatically relocates older torrents when SSD space runs low
-- **Arr Integration**: Notifies Sonarr/Radarr after successful copy for automatic import
-- **Retry Logic**: Configurable retry attempts for failed copies
-- **Safety Checks**: Prevents accidental deletion of data outside the download directory
+### 🚀 **Background Processing**
+- **Non-blocking execution**: Scripts return immediately to rTorrent, preventing UI locks
+- **Child process isolation**: Each torrent processes in its own background process
+- **Intelligent queueing**: Torrents queue when process limits are reached (never lost!)
+- **Process monitoring**: Track background processes with built-in status commands
+
+### 🔒 **Security & Safety**
+- **Path traversal protection**: Validates all file paths to prevent directory escapes
+- **Filename sanitization**: Removes dangerous characters from torrent names
+- **Input validation**: Comprehensive validation of torrent info and user inputs
+- **Safe file operations**: Atomic operations with proper error handling
+- **Disk space checking**: Prevents filling up destination storage
+
+### ⚡ **Smart Space Management**
+- **SSD cache optimization**: Automatically relocates older torrents when space is low
+- **File locking**: Prevents race conditions with single-instance space management
+- **Configurable thresholds**: Set custom space limits and retry attempts
+- **Copy verification**: Ensures data integrity with size/count validation
+
+### 📡 **Arr Integration**
+- **Sonarr/Radarr notifications**: Automatic scan requests after successful copies
+- **Targeted scanning**: Uses downloadClientId for efficient imports
+- **Health monitoring**: Built-in connectivity tests for Arr services
 
 ## Requirements
 
-- Python 3.6+
-- pyrosimple (`pip install pyrosimple`)
-- rtorrent with XMLRPC/SCGI enabled
-- Optional: Sonarr/Radarr for media management
+- **Python 3.7+**
+- **pyrosimple** (`pip install pyrosimple[torque]`)
+- **psutil** (`pip install psutil`) - for process monitoring
+- **requests** (`pip install requests`) - for Arr notifications
+- **rTorrent** with XMLRPC/SCGI enabled
+- **Optional**: Sonarr/Radarr for media management
 
 ## Installation
 
-1. Clone or download this repository:
+1. **Install dependencies:**
    ```bash
-   git clone https://github.com/yourusername/pyrosimple-manager.git
-   cd pyrosimple-manager
+   pip install pyrosimple[torque] psutil requests
    ```
 
-2. Install dependencies:
-   ```bash
-   pip install pyrosimple requests
-   ```
+2. **Configure your environment** (see Configuration section)
 
-3. Copy the example configuration:
-   ```bash
-   cp config_example.py config.py
-   ```
-
-4. Edit `config.py` with your settings:
-   - Set your rtorrent SCGI connection URL
-   - Configure your SSD and HDD paths
-   - Set up Sonarr/Radarr API keys if using
-   - Adjust space threshold and retry settings
+3. **Set up rTorrent integration** (see Integration section)
 
 ## Configuration
 
-Key configuration options in `config.py`:
+All configuration is handled via environment variables for container deployments:
 
-```python
-# Connection to rtorrent
-SCGI_URL = "http://user:pass@192.168.1.100:5000/RPC2?rpc=json"
+### Core Settings
+```bash
+# Storage paths (CRITICAL - must match your volume mounts)
+DOWNLOAD_PATH_SSD="/downloads/ssd"          # Fast SSD cache
+FINAL_DEST_BASE_HDD="/downloads/hdd"        # Permanent HDD storage
 
-# Storage paths
-DOWNLOAD_PATH_SSD = "/mnt/ssd/downloading"     # Fast SSD cache
-FINAL_DEST_BASE_HDD = "/mnt/hdd/downloads"     # Final storage
+# Connection settings  
+SCGI_URL="/dev/shm/rtorrent.sock"           # rTorrent SCGI connection
 
-# Space management
-DISK_SPACE_THRESHOLD_GB = 100  # Free up space when SSD has less than this
+# Process management
+MAX_CONCURRENT_PROCESSES=3                   # Max simultaneous torrent processes
+DISK_SPACE_THRESHOLD_GB=100                 # Free space threshold for cleanup
+COPY_RETRY_ATTEMPTS=3                       # Retry attempts for failed copies
+```
 
-# Sonarr/Radarr settings (optional)
-SONARR_URL = "http://192.168.1.100:8989"
-SONARR_API_KEY = "your-api-key-here"
+### Arr Integration
+```bash
+# Notification settings
+NOTIFY_ARR_ENABLED=true                     # Enable Arr notifications
+SONARR_URL="http://sonarr:8989"            # Sonarr API endpoint
+SONARR_API_KEY="your-sonarr-api-key"       # Sonarr API key
+RADARR_URL="http://radarr:7878"            # Radarr API endpoint  
+RADARR_API_KEY="your-radarr-api-key"       # Radarr API key
+SONARR_TAG="sonarr"                        # Label for TV shows
+RADARR_TAG="radarr"                        # Label for movies
+```
+
+### Advanced Settings
+```bash
+# Logging
+LOG_LEVEL="INFO"                           # DEBUG, INFO, WARNING, ERROR
+LOG_FILE="/config/log/pyrosimple-manager.log"
+
+# Locking and queues
+LOCK_DIR="/config/pyrosimple-manager-locks" # Lock and queue file location
+VERIFICATION_ENABLED=true                   # Enable copy verification
 ```
 
 ## Usage
 
-### Manual execution for all torrents:
+### Command Line Interface
+
 ```bash
+# Process specific torrent (spawns background process)
+python main.py TORRENT_HASH
+
+# Run space management and process queue (background)  
 python main.py
+
+# Show status of all background processes and queue
+python main.py --status
+
+# Manually process queued torrents
+python main.py --process-queue
+
+# Clear all queued torrents (emergency use)
+python main.py --clear-queue
+
+# Test mode - no actual changes
+python main.py --dry-run TORRENT_HASH
 ```
 
-### Process specific torrent by hash:
-```bash
-python main.py 1234567890ABCDEF1234567890ABCDEF12345678
-```
+### Integration with rTorrent
 
-### Integration with rtorrent
-
-Add to your `.rtorrent.rc`:
+Add to your `rtorrent.rc`:
 
 ```bash
-# When download completes, process it
+# When download completes, process it (non-blocking)
 method.set_key = event.download.finished,process_complete,"execute.nothrow=python3,/path/to/main.py,$d.hash="
 
-# Optional: Process new torrents
+# Optional: Process new torrents for queue management
 method.set_key = event.download.inserted_new,process_new,"execute.nothrow=python3,/path/to/main.py"
 ```
 
 ## How It Works
 
-1. **Single Torrent Processing** (when hash provided):
-   - Copies completed torrent from SSD to HDD
-   - Verifies the copy succeeded (file size/count check)
-   - Notifies Sonarr/Radarr if configured
-   - Retries on failure (configurable attempts)
+### Processing Flow
 
-2. **Space Management** (always runs):
-   - Checks available SSD space
-   - If below threshold, finds oldest completed torrents
-   - Relocates them to HDD and updates rtorrent paths
-   - Frees up space for new downloads
+```mermaid
+graph TD
+    A[Torrent Completes] --> B{Process Limit Reached?}
+    B -->|No| C[Spawn Background Process]
+    B -->|Yes| D[Add to Queue]
+    C --> E[Copy SSD→HDD + Verify]
+    E --> F[Notify Sonarr/Radarr]
+    G[Space Management Runs] --> H[Process Queue First]
+    H --> I[Relocate Old Torrents]
+    D --> J[Processed by Space Management]
+```
 
-## Directory Structure
+### Security Architecture
+
+- **Path Validation**: All file paths validated against base directories
+- **Input Sanitization**: Torrent names and labels sanitized for safe filesystem operations
+- **Process Isolation**: Each operation runs in isolated child processes
+- **Resource Limits**: Configurable limits prevent system overload
+- **Atomic Operations**: File operations designed to be atomic and recoverable
+
+### Directory Structure
 
 ```
-/mnt/ssd/downloading/          # SSD cache (rtorrent active directory)
-├── sonarr/                    # TV shows
-│   └── Show.S01E01.mkv
-└── radarr/                    # Movies
+/downloads/ssd/                    # SSD cache (fast, temporary)
+├── sonarr/                        # TV shows
+│   └── Show.S01E01.mkv           # Active downloads
+└── radarr/                        # Movies
     └── Movie.2023.mkv
 
-/mnt/hdd/downloads/            # HDD storage (final destination)
-├── sonarr/                    # Organized by label
-│   └── Show.S01E01.mkv
+/downloads/hdd/                    # HDD storage (permanent)
+├── sonarr/                        # Organized by label
+│   └── Show.S01E01.mkv           # Completed transfers
 └── radarr/
     └── Movie.2023.mkv
+
+/config/pyrosimple-manager-locks/   # Process coordination
+├── queue/                         # Pending torrent queue
+│   └── HASH_timestamp.queue      # Queued torrents
+└── space_management.lock          # Space management lock
 ```
 
-## Troubleshooting
+## Monitoring and Troubleshooting
 
-### Connection Issues
-- Verify SCGI_URL is correct and rtorrent is accessible
-- Check firewall rules if connecting remotely
-- Test with: `python -c "import pyrosimple; print(pyrosimple.connect('YOUR_SCGI_URL'))"`
+### Status Monitoring
 
-### Permission Errors
-- Ensure the script has read/write access to both SSD and HDD paths
-- Run with appropriate user or adjust directory permissions
-
-### Verification Failures
-- Check if source files are still being written to
-- Increase COPY_RETRY_ATTEMPTS if network storage is slow
-- Verify sufficient space on destination
-
-### Sonarr/Radarr Not Importing
-- Confirm API keys are correct
-- Check Sonarr/Radarr logs for import errors
-- Ensure download client settings match torrent labels
-
-## Testing
-
-Run the included tests:
 ```bash
-pytest tests/
+# Check all background processes and queue status
+python main.py --status
+
+# Example output:
+# Found 2 running background processes:
+#   PID 1234: python main.py --child-process --child-hash HASH1
+#   PID 1235: python main.py --child-process --child-hash HASH2
+# 
+# Space management process is currently running
+#
+# Queue status: 3 torrent(s) waiting for processing
+#   - HASH3 (queued 2.5 minutes ago)
+#   - HASH4 (queued 1.2 minutes ago)
 ```
 
-## Safety Features
+### Log Analysis
 
-- Won't delete files outside the configured download directory
-- Verifies copies before removing originals
-- Handles active torrents gracefully
-- Comprehensive error logging
+```bash
+# Main process logs
+tail -f /config/log/pyrosimple-manager.log
+
+# Container logs (if using Docker)
+docker logs container_name
+
+# Debug mode
+LOG_LEVEL=DEBUG python main.py --dry-run
+```
+
+### Common Issues
+
+**Queue building up?**
+```bash
+# Check process limits
+python main.py --status
+# Increase MAX_CONCURRENT_PROCESSES if needed
+
+# Manually process queue
+python main.py --process-queue
+```
+
+**Path errors?**
+- Verify DOWNLOAD_PATH_SSD and FINAL_DEST_BASE_HDD are correct
+- Check file permissions on both directories
+- Ensure paths are properly mounted (in containers)
+
+**Space management not working?**
+- Check DISK_SPACE_THRESHOLD_GB setting
+- Verify space management isn't already running
+- Check logs for lock file issues
+
+## Performance Tuning
+
+### Process Management
+- `MAX_CONCURRENT_PROCESSES=3` - Balance between speed and system load
+- Higher values = faster processing but more resource usage
+- Lower values = more conservative, longer queue processing
+
+### Storage Optimization
+- Set `DISK_SPACE_THRESHOLD_GB` to 10-20% of SSD capacity
+- Use fast filesystems (ext4, xfs) for SSD cache
+- Ensure good I/O bandwidth between SSD and HDD
+
+### Network Optimization
+- Place Arr services on same network for faster notifications
+- Use local SCGI sockets instead of network connections when possible
+
+## Security Features
+
+### Path Protection
+- **Validation**: All paths checked against allowed base directories
+- **Sanitization**: Dangerous characters removed from filenames
+- **Bounds checking**: Prevents access outside designated areas
+
+### Process Security
+- **Isolation**: Each torrent processes in separate child process
+- **Resource limits**: Configurable concurrent process limits
+- **Clean shutdown**: Proper signal handling and cleanup
+
+### Input Validation
+- **Hash validation**: Torrent hashes validated for format and length
+- **Size validation**: File sizes checked for reasonable bounds
+- **Configuration validation**: All settings validated on startup
 
 ## Contributing
 
-Feel free to submit issues, feature requests, or pull requests!
+1. **Security**: Report security issues privately
+2. **Features**: Submit feature requests with use cases
+3. **Bugs**: Include logs, configuration, and reproduction steps
+4. **Code**: Follow existing patterns, add tests for new features
 
 ## License
 
-MIT License - see LICENSE file for details 
+MIT License - see LICENSE file for details
+
+---
+
+**Note**: This software is designed for use in containerized environments but can run on bare metal with proper Python environment setup. 

@@ -18,7 +18,7 @@ RUN echo "**** install Python ****" && \
 RUN pip install --no-cache-dir 'pyrosimple[torque]'
 
 # Install additional Python dependencies for pyrosimple-manager
-RUN pip install --no-cache-dir requests
+RUN pip install --no-cache-dir requests psutil
 
 # Copy pyrosimple-manager scripts into the container
 RUN mkdir -p ${APP_DIR}/pyrosimple-manager
