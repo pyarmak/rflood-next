@@ -17,8 +17,11 @@ RUN echo "**** install Python ****" && \
 # Install pyrosimple
 RUN pip install --no-cache-dir 'pyrosimple[torque]'
 
+# Install psutil from Alpine packages (avoids compilation)
+RUN apk add --no-cache py3-psutil
+
 # Install additional Python dependencies for pyrosimple-manager
-RUN pip install --no-cache-dir requests psutil
+RUN pip install --no-cache-dir requests
 
 # Copy pyrosimple-manager scripts into the container
 RUN mkdir -p ${APP_DIR}/pyrosimple-manager
