@@ -7,7 +7,7 @@ Returns exit code 0 if healthy, 1 if unhealthy.
 import sys
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Check if we're running during container startup
 startup_grace_period = 180  # 3 minutes
@@ -32,7 +32,6 @@ def is_startup_period():
         return True
 
 try:
-    import pyrosimple
     import requests
     import config
 except ImportError as e:
@@ -42,18 +41,17 @@ except ImportError as e:
         sys.exit(0)
     sys.exit(1)
 
-def check_rtorrent_connection():
-    """Check if we can connect to rtorrent"""
+def check_flood_ui():
+    """Check if Flood UI is accessible and responsive"""
     try:
-        engine = pyrosimple.connect(config.SCGI_URL)
-        if engine.rpc is None:
-            return False, "Failed to connect to rTorrent"
-        
-        # Try a simple RPC call
-        pid = engine.rpc.system.pid()
-        return True, f"rTorrent connection OK (PID: {pid})"
+        # Check if Flood UI is accessible (typically runs on port 3000)
+        response = requests.get("http://localhost:3000", timeout=5)
+        if response.status_code == 200:
+            return True, "Flood UI accessible"
+        else:
+            return False, f"Flood UI returned status {response.status_code}"
     except Exception as e:
-        return False, f"rTorrent connection failed: {str(e)}"
+        return False, f"Flood UI check failed: {str(e)}"
 
 def check_storage_paths():
     """Check if storage paths exist and are writable"""
@@ -176,7 +174,7 @@ def main():
         ("Configuration", check_configuration),
         ("Storage Paths", check_storage_paths),
         ("Disk Space", check_disk_space),
-        ("rTorrent Connection", check_rtorrent_connection),
+        ("Flood UI", check_flood_ui),
         ("Arr Services", check_arr_services),
     ]
     
@@ -196,8 +194,8 @@ def main():
                     if check_name in ["Configuration", "Storage Paths"]:
                         critical_failure = True
                 else:
-                    # After startup, rTorrent connection is also critical
-                    if check_name in ["Configuration", "Storage Paths", "rTorrent Connection"]:
+                    # After startup, Flood UI is also critical
+                    if check_name in ["Configuration", "Storage Paths", "Flood UI"]:
                         critical_failure = True
                         
         except Exception as e:
