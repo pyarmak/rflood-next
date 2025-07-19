@@ -113,6 +113,12 @@ VERIFICATION_ENABLED=true             # Verify copy integrity
 NOTIFY_ARR_ENABLED=true               # Enable Arr notifications
 ```
 
+### Dynamic Service Control (S6_STAGE2_HOOK)
+New in this version: dynamically disable Flood UI service at container startup using S6_STAGE2_HOOK
+```bash
+DISABLE_FLOOD_SERVICE=true            # Disable Flood UI service
+```
+
 ## How It Works
 
 1. **Active Downloads**: Torrents download to fast SSD storage (`DOWNLOAD_PATH_SSD`)
@@ -151,6 +157,79 @@ docker exec rflood tail -f /config/log/pyrosimple-manager.log
 
 # Debug mode
 docker exec rflood env LOG_LEVEL=DEBUG python /app/pyrosimple-manager/main.py
+```
+
+## Dynamic Service Control (S6_STAGE2_HOOK)
+
+This container includes a powerful S6_STAGE2_HOOK that allows you to dynamically control the Flood UI service based on environment variables. This is useful for specialized deployments or troubleshooting scenarios.
+
+### Supported Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DISABLE_FLOOD_SERVICE` | `false` | Set to `true` to disable the Flood UI service |
+
+### Use Cases
+
+#### 1. **rTorrent-Only Mode** (No Web UI)
+```bash
+# Run only rTorrent and pyrosimple-manager without Flood UI
+DISABLE_FLOOD_SERVICE=true
+```
+
+#### 2. **Headless Mode** (API/CLI Only)
+```bash
+# Disable web interface for headless operations
+DISABLE_FLOOD_SERVICE=true
+```
+
+### Runtime Service Control
+
+The hook runs during container startup and can:
+- **Disable services** by creating `down` files in s6 service directories
+- **Re-enable services** by removing `down` files
+- **Stop running services** gracefully if they're already started
+- **Start disabled services** when re-enabled
+
+### Hook Execution Log
+
+Monitor the hook execution in container logs:
+```bash
+docker logs rflood 2>&1 | grep "S6_STAGE2_HOOK"
+```
+
+Example output:
+```
+[S6_STAGE2_HOOK] Starting dynamic service control...
+[S6_STAGE2_HOOK] DISABLE_FLOOD_SERVICE is set to true
+[S6_STAGE2_HOOK] Disabling flood service...
+[S6_STAGE2_HOOK] Flood service disabled successfully
+[S6_STAGE2_HOOK] Service control completed. Current states:
+[S6_STAGE2_HOOK] - Flood service: DISABLED
+[S6_STAGE2_HOOK] - rTorrent service: ENABLED (always runs)
+[S6_STAGE2_HOOK] Dynamic service control hook completed
+```
+
+### Docker Compose Example
+
+```yaml
+version: '3.8'
+services:
+  rflood:
+    image: rflood-next:latest
+    environment:
+      # Standard configuration
+      - DOWNLOAD_PATH_SSD=/downloads/ssd
+      - FINAL_DEST_BASE_HDD=/downloads/hdd
+      
+      # Dynamic service control
+      - DISABLE_FLOOD_SERVICE=false      # Keep UI enabled (default)
+      
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+    ports:
+      - "3000:3000"  # Only needed if Flood UI is enabled
 ```
 
 ## Development

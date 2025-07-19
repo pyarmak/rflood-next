@@ -26,8 +26,12 @@ RUN pip install --no-cache-dir requests
 # Copy pyrosimple-manager scripts into the container
 RUN mkdir -p ${APP_DIR}/pyrosimple-manager
 COPY pyrosimple-manager/*.py ${APP_DIR}/pyrosimple-manager/
+COPY pyrosimple-manager/s6-stage2-hook.sh ${APP_DIR}/pyrosimple-manager/
 RUN chmod -R 755 ${APP_DIR}/pyrosimple-manager && \
     ln -s ${APP_DIR}/pyrosimple-manager /scripts
+
+# Set up S6_STAGE2_HOOK for dynamic service control
+ENV S6_STAGE2_HOOK=${APP_DIR}/pyrosimple-manager/s6-stage2-hook.sh
 
 # Clean up apk cache
 RUN rm -rf /var/cache/apk/*
