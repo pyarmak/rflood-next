@@ -10,8 +10,6 @@ echo "[S6_STAGE2_HOOK] Starting dynamic service control..."
 USER_CONTENTS_DIR="/etc/s6-overlay/s6-rc.d/user/contents.d"
 SERVICE_FLOOD_FILE="${USER_CONTENTS_DIR}/service-flood"
 
-mkdir -p "${USER_CONTENTS_DIR}"
-
 # Check for environment variable to disable flood service
 if [[ "${DISABLE_FLOOD_SERVICE,,}" == "true" ]]; then
     echo "[S6_STAGE2_HOOK] DISABLE_FLOOD_SERVICE is set to true"
@@ -56,4 +54,15 @@ fi
 
 echo "[S6_STAGE2_HOOK] - rTorrent service: ENABLED (always runs)"
 
-echo "[S6_STAGE2_HOOK] Dynamic service control hook completed" 
+echo "[S6_STAGE2_HOOK] Dynamic service control completed"
+
+# Call the original stage2 hook to ensure base functionality is preserved
+if [[ -f "/etc/s6-overlay/init-hook" ]]; then
+    echo "[S6_STAGE2_HOOK] Calling original stage2 hook..."
+    /etc/s6-overlay/init-hook
+    echo "[S6_STAGE2_HOOK] Original stage2 hook completed"
+else
+    echo "[S6_STAGE2_HOOK] Warning: Original stage2 hook not found at /etc/s6-overlay/init-hook"
+fi
+
+echo "[S6_STAGE2_HOOK] All stage2 hooks completed" 
